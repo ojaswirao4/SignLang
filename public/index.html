@@ -146,6 +146,7 @@
             <div id="boardPane" class="board" hidden></div>
             <div class="buffer">
               <div id="glossBuffer" class="buffer-chips"><span class="placeholder">Your signs appear here…</span></div>
+              <div id="recAlts" class="rec-alts" hidden><span>Did you mean</span></div>
               <p id="bufMeaning" class="buf-meaning" aria-live="polite" hidden><span>Meaning</span><b></b></p>
               <div class="buffer-actions">
                 <button id="bufBack" class="ghost" title="Remove last">⌫</button>
@@ -225,9 +226,8 @@
           </select>
         </label>
         <label>Sign language
-          <select id="signLang">
-            <option value="asl">American Sign Language (ASL)</option>
-            <option value="isl">Indian Sign Language (pilot, ~260 signs; other words in ASL)</option>
+          <select id="signLang" disabled>
+            <option value="isl">Indian Sign Language (ISL)</option>
           </select>
         </label>
         <label>Speech language

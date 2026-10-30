@@ -11,8 +11,22 @@ HERE = Path(__file__).parent
 SET = os.environ.get('SET', 'wlasl')
 PREV = HERE / 'preview' if SET == 'wlasl' else HERE / 'preview' / SET
 SIGNS = HERE.parent.parent / 'public' / 'signs' / SET
-DATA = HERE / 'data' if SET == 'wlasl' else HERE.parent / 'include' / 'data'
-manifest = json.loads((DATA / 'manifest.json').read_text())
+# where each dataset's videos live (a sign file names its dataset in source.dataset)
+DATAS = {'WLASL': HERE / 'data', 'INCLUDE': HERE.parent / 'include' / 'data', 'CISLR': Path.home() / 'datasets' / 'cislr'}
+_manifests = {}
+
+
+def source_video(gloss, doc):
+    ds = doc['source'].get('dataset') or ('WLASL' if SET == 'wlasl' else 'INCLUDE')
+    if ds not in _manifests:
+        _manifests[ds] = json.loads((DATAS[ds] / 'manifest.json').read_text(encoding='utf-8'))
+    m = _manifests[ds]
+    keys = [gloss.lower().replace('-', ' '), gloss.lower().replace('-', '_')]
+    vids = next(m[k] for k in keys if k in m)
+    v = next(v for v in vids if v['video_id'] == doc['source']['video_id'])
+    return DATAS[ds] / v['file']
+
+
 picks = json.loads((PREV / 'picks.json').read_text())
 H = 220
 
@@ -31,9 +45,8 @@ def video_frame(path, n):
 rows = []
 for gloss, ks in picks.items():
     doc = json.loads((SIGNS / f'{gloss}.json').read_text())
-    key = gloss.lower().replace('-', ' ' if SET == 'wlasl' else '_')
-    v = next(v for v in manifest[key] if v['video_id'] == doc['source']['video_id'])
-    top = [fit(video_frame(DATA / v['file'], p['vf'])) for p in ks]
+    src = source_video(gloss, doc)
+    top = [fit(video_frame(src, p['vf'])) for p in ks]
     bot = [fit(cv2.imread(str(PREV / f"{gloss}_{p['k']}.png"))) for p in ks]
     cols = []
     for t, b in zip(top, bot):

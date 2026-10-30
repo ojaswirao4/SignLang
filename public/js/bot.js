@@ -444,8 +444,20 @@ const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const word = (g) => (g.startsWith('FS:') ? (NOUN_WORD[g] || cap(g.slice(3).toLowerCase())) : /^\d+$/.test(g) ? g : NOUN_WORD[g] || g.toLowerCase().replace(/-/g, ' '));
 const article = (np) => (UNCOUNT.has(np) || /^[A-Z0-9]/.test(np) ? '' : /^[aeiou]/.test(np) ? 'an ' : 'a ');
 
+// ISL numbers are signed digit by digit as number signs (THREE ZERO FIVE); join them back into 305.
+const NUM_SIGN = { ZERO: '0', ONE: '1', TWO: '2', THREE: '3', FOUR: '4', FIVE: '5', SIX: '6', SEVEN: '7', EIGHT: '8', NINE: '9', TEN: '10' };
+export function joinNumbers(glosses) {
+  const out = [];
+  for (const t of glosses) {
+    const d = NUM_SIGN[t] ?? (/^\d+$/.test(t) ? t : null);
+    if (d !== null && /^\d+$/.test(out[out.length - 1] || '')) out[out.length - 1] += d;
+    else out.push(d ?? t);
+  }
+  return out;
+}
+
 export function composeSentence(glosses) {
-  let g = glosses.filter(Boolean);
+  let g = joinNumbers(glosses.filter(Boolean));
   // "2 NIGHT" / "3 DAY" is a duration: "for 2 nights"
   let dur = '';
   const di = g.findIndex((t, i) => /^\d+$/.test(t) && ['NIGHT', 'DAY', 'HOUR', 'MINUTE', 'WEEK', 'MONTH', 'YEAR'].includes(g[i + 1]));
@@ -542,6 +554,7 @@ export function composeSentence(glosses) {
 // A template is used only if it covers everything that was signed; otherwise composeSentence() builds it.
 const FUNC = new Set(['HELLO', 'NAMASTE', 'PLEASE', 'THANK-YOU', 'ME', 'YOU', 'MY', 'WANT', 'NEED', 'HAVE']);
 export function glossToEnglish(glosses, extra = []) {
+  glosses = joinNumbers(glosses);
   const set = new Set(glosses);
   const content = glosses.filter((t) => !FUNC.has(t) && !/^\d+$/.test(t) && !(t.startsWith('FS:') && !['FS:WIFI', 'FS:VEG', 'FS:BELT', 'FS:HOT'].includes(t)));
   // (a question word is covered by a question template that starts with it, or by any specific 2+ sign question)

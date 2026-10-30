@@ -1082,7 +1082,7 @@ export class Avatar {
     // the forehead at ~3.5 m/s. Moves within a sign keep their authored timing.
     const t = !this.frame || this.frame.isRest ? Math.max(f.t, this._reachTime(to)) : f.t;
     const seg = this._segment(to, t, f.hold || 0, this.queue[0]);
-    this.frame = { ...seg, hold: f.hold || 0, el: 0, face: f.face, press: f.press };
+    this.frame = { ...seg, hold: f.hold || 0, el: 0, face: f.face, press: f.press, tuck: f.tuck };
     const fc = f.face || {};
     this.faceTarget.brow = fc.brow || 0;
     this.faceTarget.smile = fc.smile ? 0.9 : 0.25;
@@ -1137,7 +1137,13 @@ export class Avatar {
       if (fr.face?.shake) shake = Math.sin(ph * Math.PI * 2) * 0.13;
       if (fr.el >= fr.t + fr.hold) {
         if (fr.isRest) this.frame = null;
-        else this._next();
+        else {
+          // carry the rest of this frame's time into the next keyframe: dropping it made the hand stall
+          // for one frame at every keyframe (a stutter, read as a 60 m/s^2 jolt), then jump on
+          const over = fr.el - (fr.t + fr.hold);
+          this._next();
+          if (this.frame && over > 0) return this._advance(over / (this.speed || 1)); // (real time, so the turn cap allows its share)
+        }
       }
     }
     return { nod, shake };

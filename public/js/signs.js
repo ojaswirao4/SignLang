@@ -298,9 +298,18 @@ export const SIGNS = {
   PARKING: [k(r([0.02, 1.32, 0.3], [0.3, 0, 1], IN, '3'), L_PALM_UP, 0.3, 0), k(r([0.03, 1.25, 0.31], [0.3, 0, 1], IN, '3'), L_PALM_UP, 0.25, 0.08)],
 };
 // Namaste: the Indian greeting (not an ASL sign): palms pressed together at the chest, fingers up, a small bow
+// (as in the ISLRTC dictionary video). The hands come up apart, palms facing, and close sideways into the
+// press, then open sideways before dropping; going straight from rest, the fingertips meet first and the
+// hands make a "roof" on the way up and down. tuck: elbows stay down at her sides, wrists bent back.
+const namaste = (x, y, z, tilt) => [r([-x, y, z], [0, 1, tilt], IN, 'flat'), r([x, y, z], [0, 1, tilt], [-1, 0, 0], 'flat')];
 SIGNS.NAMASTE = [
-  { ...k(r([-0.008, 1.34, 0.24], [0, 1, 0.22], IN, 'flat'), r([0.008, 1.34, 0.24], [0, 1, 0.22], [-1, 0, 0], 'flat'), 0.45, 0.1, { smile: 1 }), press: 1 },
-  { ...k(r([-0.008, 1.33, 0.25], [0, 1, 0.3], IN, 'flat'), r([0.008, 1.33, 0.25], [0, 1, 0.3], [-1, 0, 0], 'flat'), 0.35, 0.45, { smile: 1, nod: 1 }), press: 1 },
+  // lifting: hands wide, fingers forward (from rest the fingers point at each other and would touch)
+  { ...k(...namaste(0.12, 1.2, 0.32, 0.9), 0.22, 0, { smile: 1 }), tuck: 1 },
+  { ...k(...namaste(0.055, 1.31, 0.32, 0.15), 0.25, 0, { smile: 1 }), tuck: 1 },
+  { ...k(...namaste(0.008, 1.33, 0.32, 0.2), 0.22, 0.15, { smile: 1 }), press: 1, tuck: 1 },
+  { ...k(...namaste(0.008, 1.315, 0.33, 0.3), 0.3, 0.6, { smile: 1, nod: 1 }), press: 1, tuck: 1 },
+  { ...k(...namaste(0.055, 1.31, 0.32, 0.18), 0.22, 0, { smile: 1 }), tuck: 1 },
+  { ...k(...namaste(0.12, 1.2, 0.32, 0.9), 0.22, 0, { smile: 1 }), tuck: 1 },
 ];
 SIGNS.CALL = SIGNS.PHONE;
 SIGNS.TAXI = SIGNS.CAR;
@@ -343,8 +352,12 @@ const INDIAN_AUTHORED = new Set(['NAMASTE']); // hand-authored signs that are In
 const ISL = {}; // token -> frames
 const islFile = new Map(); // token -> file name
 let islPhrases = [];
-let signLang = 'asl';
-export const setSignLanguage = (lang) => (signLang = lang === 'isl' ? 'isl' : 'asl');
+// ISL-only build: Meera signs Indian Sign Language only (CISLR + INCLUDE signs, plus NAMASTE).
+// American signs (the hand-authored ASL set and WLASL) are never used; a word with no Indian sign is
+// fingerspelled, and numbers use the Indian number signs.
+export const ISL_ONLY = true;
+let signLang = 'isl';
+export const setSignLanguage = (lang) => (signLang = ISL_ONLY || lang === 'isl' ? 'isl' : 'asl');
 export const signLanguage = () => signLang;
 const islReady = fetch(ISL_URL + 'index.json')
   .then((r) => (r.ok ? r.json() : []))
@@ -359,9 +372,14 @@ const islReady = fetch(ISL_URL + 'index.json')
 export const datasetReady = Promise.all([aslReady, islReady]).then(() => datasetIndex);
 const useISL = (tok) => signLang === 'isl' && islFile.has(tok);
 // 'isl' or 'asl': the language a token is signed in right now (fingerspelling is the ASL alphabet)
-export const signSource = (tok) => (useISL(tok) || INDIAN_AUTHORED.has(tok) ? 'isl' : 'asl');
+// (ISL-only: fingerspelling uses the two-handed ISL alphabet, so it is Indian too)
+export const signSource = (tok) => (useISL(tok) || INDIAN_AUTHORED.has(tok) || (ISL_ONLY && (tok.startsWith('FS:') || /^[A-Z]$/.test(tok))) ? 'isl' : 'asl');
 
-export const hasSign = (tok) => !!SIGNS[tok] || datasetIndex.has(tok) || useISL(tok);
+export const hasSign = (tok) => (ISL_ONLY ? useISL(tok) || INDIAN_AUTHORED.has(tok) : !!SIGNS[tok] || datasetIndex.has(tok) || useISL(tok));
+
+// Indian number signs (from the dataset) for each digit; numbers are signed digit by digit.
+const DIGIT_SIGN = ['ZERO', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE'];
+const islDigits = (num) => (ISL_ONLY && [...num].every((d) => useISL(DIGIT_SIGN[d])) ? [...num].map((d) => DIGIT_SIGN[d]) : [num]);
 
 // Video tracking sometimes misreads a hand for a single keyframe (~60 ms): a finger jumps half-bent and
 // back, or the palm flips around and back. Those one-keyframe spikes play as flutter / flips, so they are
@@ -395,6 +413,169 @@ export function despike(frames) {
   return out;
 }
 
+// The same misreading over 2-3 keyframes (a still or blurry hand seen edge-on: the palm flips round, or
+// the fingers swing sideways, then back; WHERE's resting hand, BABY). A real hand can't turn away and
+// back that fast, so a run that leaves and returns to the same orientation at over GLITCH_DPS is
+// bridged smoothly from the keyframe before it to the one after it.
+const GLITCH_DPS = 900;
+export function deglitch(frames) {
+  const out = frames.map((f) => ({ ...f, R: f.R && { ...f.R }, L: f.L && { ...f.L } }));
+  const turn = (x, y) => Math.max(angDeg(x.f, y.f), angDeg(x.n, y.n));
+  const unit = (v) => { const l = Math.hypot(...v) || 1; return v.map((x) => x / l); };
+  for (const s of ['R', 'L']) {
+    for (let i = 1; i < out.length - 1; i++) {
+      for (const len of [3, 2]) {
+        const a = out[i - 1][s], c = out[i + len]?.[s];
+        const mid = out.slice(i, i + len).map((f) => f[s]);
+        if (!a || !c || mid.some((m) => !m)) continue;
+        const secs = out.slice(i, i + len + 1).reduce((t, f) => t + (f.t || 0.05), 0);
+        // the whole hand darts away and back; or just the fingers do, while the palm makes a real turn
+        // (WHERE's resting hand turns palm-up, and on the way the fingers swing round into her body)
+        const away = Math.min(...mid.map((m) => Math.min(turn(a, m), turn(m, c))));
+        const awayF = Math.min(...mid.map((m) => Math.min(angDeg(a.f, m.f), angDeg(m.f, c.f))));
+        const whole = turn(a, c) <= 35 && away >= 60 && (2 * away) / secs >= GLITCH_DPS;
+        const fingers = angDeg(a.f, c.f) <= 70 && awayF >= 90 && (2 * awayF) / secs >= GLITCH_DPS;
+        if (!whole && !fingers) continue;
+        mid.forEach((m, j) => {
+          const u = (j + 1) / (len + 1);
+          m.f = unit(a.f.map((v, k) => v + (c.f[k] - v) * u));
+          m.n = unit(a.n.map((v, k) => v + (c.n[k] - v) * u));
+        });
+        i += len - 1;
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+// A hand down at rest height in the video is the signer's other hand hanging at their side (or a hand
+// on its way down), where tracking reads it worst: fingers "up" by the hip, palm flipped, an arm so
+// straight its elbow swings about (THEIR's left hand spun round). Meera stands at a counter, so there
+// the hand eases into her own rest on the counter: unchanged above SETTLE_HI, fully at rest by SETTLE_LO.
+const SETTLE_HI = 1.16, SETTLE_LO = 1.06; // (from 1.1: a hand at 1.08 stayed on her hip, elbow out; GOVERNMENT)
+// A hand the tracker didn't see at all (keyframe 'est': its turn and shape were filled in from another
+// moment, only the arm's position is real) settles from higher up: HELP's left hand otherwise held a
+// made-up pose out at her waist before rising to meet the other hand.
+const SETTLE_EST_HI = 1.32, SETTLE_EST_LO = 1.16;
+let restShape = null;
+export function settle(frames) {
+  restShape ||= shapeArray('rest');
+  const unit = (v) => { const l = Math.hypot(...v) || 1; return v.map((x) => x / l); };
+  const mix = (a, b, w) => a.map((x, i) => x + (b[i] - x) * w);
+  return frames.map((f) => {
+    let out = f;
+    for (const s of ['R', 'L']) {
+      const h = f[s];
+      if (!h?.p) continue;
+      const [hi, lo] = h.est ? [SETTLE_EST_HI, SETTLE_EST_LO] : [SETTLE_HI, SETTLE_LO];
+      const w = Math.max(0, Math.min(1, (hi - h.p[1]) / (hi - lo)));
+      if (!w) continue;
+      const rest = REST[s];
+      out = out === f ? { ...f } : out;
+      out[s] = { ...h, p: mix(h.p, rest.p, w), f: unit(mix(h.f, rest.f, w)), n: unit(mix(h.n, rest.n, w)), h: Array.isArray(h.h) ? mix(h.h, restShape, w) : h.h };
+    }
+    return out;
+  });
+}
+
+// The CISLR clips are 300x300, so a hand is ~30 pixels: finger tracking squeezes every finger toward
+// half-bent (a fist reads ~0.7, a pointing index ~0.3 beside ~0.6 curled fingers), and Meera's hands
+// looked vague and claw-like. Sharpen within each hand: where the fingers clearly differ (DEAF's index),
+// the straighter ones straighten and the others curl in; where they agree, a firmly bent hand closes
+// into a fist and a mostly straight one flattens. Real half-curves (C, O) are left as they are. The
+// decisions use finger bends averaged over neighbouring keyframes, so a hand doesn't flicker.
+const CRISP = 0.6; // how far toward straight / curled (0..1)
+export function crisp(frames) {
+  const bends = (h) => [0, 1, 2, 3].map((i) => (h[3 * i] + h[3 * i + 1] + h[3 * i + 2]) / 3);
+  return frames.map((f, i) => {
+    let out = f;
+    for (const s of ['R', 'L']) {
+      const h = f[s]?.h;
+      if (!Array.isArray(h) || h.length < 12) continue;
+      const near = [frames[i - 1], f, frames[i + 1]].map((g) => g?.[s]?.h).filter((x) => Array.isArray(x) && x.length >= 12);
+      const m = bends(h).map((_, k) => near.reduce((a, x) => a + bends(x)[k], 0) / near.length);
+      const hi = Math.max(...m), lo = Math.min(...m), avg = m.reduce((a, x) => a + x, 0) / 4;
+      const nh = h.slice();
+      for (let k = 0; k < 4; k++) {
+        let to = null;
+        if (hi - lo > 0.25) to = m[k] < (hi + lo) / 2 ? 0 : 1;
+        else if (avg > 0.62) to = 1;
+        else if (avg < 0.3) to = 0;
+        if (to === null) continue;
+        for (let j = 0; j < 3; j++) nh[3 * k + j] += (to - nh[3 * k + j]) * CRISP;
+      }
+      out = out === f ? { ...f } : out;
+      out[s] = { ...f[s], h: nh };
+    }
+    return out;
+  });
+}
+
+// Some dataset clips are very short (CISLR), so keyframes can be only 0.067 s apart; a hand that
+// reverses direction inside such a short step (a circling sign like FAMILY) plays as a jerk. Give every
+// step at least MIN_STEP, and enough time that no palm moves faster than a brisk natural signing speed,
+// nor turns faster than a wrist does in brisk signing (a quick turn read from video otherwise spins).
+const MAX_SPEED = 1.1; // metres per second
+const MAX_TURN = 450; // degrees per second
+const MIN_STEP = 0.13; // seconds
+// the whole hand's turn between two orientations (fingers f, palm n): more than either direction alone
+// turns when the hand rotates about an axis between them
+const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const unit3 = (v) => { const l = Math.hypot(...v) || 1; return v.map((x) => x / l); };
+function handTurnDeg(a, b) {
+  const basis = (h) => { const f = unit3(h.f), s = unit3(cross3(f, h.n)); return [f, cross3(s, f), s]; };
+  const A = basis(a), B = basis(b);
+  let tr = 0;
+  for (let i = 0; i < 3; i++) tr += A[i][0] * B[i][0] + A[i][1] * B[i][1] + A[i][2] * B[i][2];
+  return (Math.acos(Math.max(-1, Math.min(1, (tr - 1) / 2))) * 180) / Math.PI;
+}
+// And no sharper change of hand velocity than MAX_ACCEL between two steps (a hand reversing inside two
+// short steps jolts, DISABILITY): both steps get more time, as a person slows into a turn.
+const MAX_ACCEL = 35; // metres per second squared
+export function pace(frames) {
+  const out = frames.map((f, i) => {
+    if (!i) return f;
+    const prev = frames[i - 1];
+    let d = 0, turn = 0;
+    for (const s of ['R', 'L']) {
+      if (f[s]?.p && prev[s]?.p) d = Math.max(d, Math.hypot(f[s].p[0] - prev[s].p[0], f[s].p[1] - prev[s].p[1], f[s].p[2] - prev[s].p[2]));
+      if (f[s]?.f && prev[s]?.f) turn = Math.max(turn, handTurnDeg(f[s], prev[s]));
+    }
+    const t = Math.max(f.t || 0.05, MIN_STEP, d / MAX_SPEED, turn / MAX_TURN);
+    return t !== f.t ? { ...f, t } : f;
+  });
+  const vel = (i, s) => out[i][s].p.map((x, k) => (x - out[i - 1][s].p[k]) / out[i].t);
+  for (let pass = 0; pass < 4; pass++) {
+    for (let i = 2; i < out.length; i++) {
+      let a = 0;
+      for (const s of ['R', 'L']) {
+        if (!out[i][s]?.p || !out[i - 1][s]?.p || !out[i - 2][s]?.p) continue;
+        const v1 = vel(i - 1, s), v2 = vel(i, s);
+        a = Math.max(a, Math.hypot(v2[0] - v1[0], v2[1] - v1[1], v2[2] - v1[2]) / ((out[i].t + out[i - 1].t) / 2));
+      }
+      if (a > MAX_ACCEL) {
+        const k = Math.sqrt(a / MAX_ACCEL); // (acceleration falls with the square of the time)
+        out[i] = { ...out[i], t: out[i].t * k };
+        out[i - 1] = { ...out[i - 1], t: out[i - 1].t * k };
+      }
+    }
+  }
+  return out;
+}
+
+// Hand corrections for signs whose video can't show a detail (a 30-pixel hand loses the thumb), checked
+// against the dictionary video: applied as the sign loads, so re-converting doesn't undo them.
+const raised = (h) => h && h.p[1] > 1.12;
+const withShape = (side, name) => (frames) => {
+  const s = shapeArray(name);
+  return frames.map((f) => (raised(f[side]) ? { ...f, [side]: { ...f[side], h: s } } : f));
+};
+export const ISL_FIX = {
+  I: withShape('R', 'A'), // thumb-up fist toward herself (read as a loose, half-bent hand)
+  THREE: withShape('R', 'W'), // index, middle and ring up, thumb holding the little finger (read as a flat hand)
+};
+
 // Fetch the dataset signs a gloss needs before playing it.
 export async function loadSigns(tokens) {
   await datasetReady;
@@ -411,7 +592,7 @@ export async function loadSigns(tokens) {
     ...needISL.map((t) =>
       fetch(ISL_URL + encodeURIComponent(islFile.get(t)) + '.json')
         .then((r) => r.json())
-        .then((d) => (ISL[t] = despike(d.frames)))
+        .then((d) => (ISL[t] = pace(settle((ISL_FIX[t] || ((f) => f))(crisp(deglitch(despike(d.frames))))))))
         .catch(() => islFile.delete(t))
     ),
   ]);
@@ -427,9 +608,82 @@ function letterPose(ch) {
   return base;
 }
 
+// ---------- Indian Sign Language alphabet (two-handed) ----------
+// Hand-made from the photos of the ISLAN dataset (Elakkiya R & Rajalakshmi E, Mendeley Data, CC BY 4.0,
+// doi:10.17632/rc349j45m5.1), Signer 1, double-handed set. The photos are close-ups from the signer's
+// own view, so they could not be converted automatically; these poses copy them by eye and should be
+// checked by an ISL signer. Vowels: the right index touches a fingertip of the open left hand
+// (A thumb, E index, I middle, O ring, U little finger).
+HANDSHAPES.three = h(E, E, E, C, T.across); // index + middle + ring together (M)
+HANDSHAPES.two = h(E, E, C, C, T.across); // index + middle together (F, N)
+const unitv = (v) => { const n = Math.hypot(...v) || 1; return v.map((x) => x / n); };
+const LP = [0.07, 1.27, 0.29]; // left hand's palm, in front of the left chest
+// open left hand held sideways (fingers pointing across the body, palm toward the signer), as in the
+// ISLAN photos: the fingertips then stack top to bottom (thumb on top, little finger lowest)
+const LV = [0.1, 1.28, 0.3];
+const L5 = r(LV, [-1, 0, 0.15], BK, '5');
+const L1 = r([0.06, 1.26, 0.3], UP, BK, '1'); // left index up
+const LPALM = r([0.05, 1.25, 0.31], [-0.5, 0, 1], UP, 'B'); // left palm up
+// fingertips of that sideways left hand, relative to its palm (x toward the body's midline is negative)
+const TIP = { thumb: [-0.045, 0.07, 0.02], index: [-0.09, 0.03, 0.015], middle: [-0.097, 0.01, 0.015], ring: [-0.092, -0.01, 0.015], little: [-0.078, -0.03, 0.015] };
+// right index tip touching a point, coming down onto it from above and in front
+const touch = (pt, f = [0.15, -1, -0.3], hs = '1') => r(add(pt, unitv(f).map((x) => -x * 0.095)), f, IN, hs);
+const vowel = (tip) => [{ ...k(touch(add(LV, TIP[tip])), L5, 0.25, 0.2), press: 1 }];
+const one = (R, L, hold = 0.22) => [{ ...k(R, L, 0.25, hold), press: 1 }];
+const ISL_LETTERS = {
+  A: vowel('thumb'),
+  E: vowel('index'),
+  I: vowel('middle'),
+  O: vowel('ring'),
+  U: vowel('little'),
+  // J: I (middle finger), then the index draws a hook down the palm
+  J: [...vowel('middle'), { ...k(touch(add(LV, [-0.05, -0.01, 0.02])), L5, 0.18, 0.04), press: 1 }, { ...k(touch(add(LV, [-0.02, -0.03, 0.02])), L5, 0.14, 0.1), press: 1 }],
+  B: one(r([-0.012, 1.33, 0.31], [0.4, 0.9, 0], FW, 'O'), r([0.012, 1.26, 0.31], [-0.4, 0.9, 0], [0, 0, 1], 'O')), // two rings, one above the other
+  C: one(r([-0.12, 1.33, 0.31], UP, IN, 'C'), null), // one hand
+  D: one(r([0.0, 1.31, 0.31], UP, IN, 'C'), L1), // half-circle against the left index
+  F: one(r([0.0, 1.31, 0.32], IN, DN, 'two'), L1), // two fingers across the left index
+  G: one(r([0.03, 1.33, 0.3], FW, DN, 'S'), r([0.03, 1.26, 0.3], FW, DN, 'S')), // fist on fist
+  H: [{ ...k(r([0.02, 1.28, 0.27], [0.4, 0, 1], DN, 'B'), LPALM, 0.25, 0.04), press: 1 }, { ...k(r([0.02, 1.28, 0.38], [0.4, 0, 1], DN, 'B'), LPALM, 0.2, 0.12), press: 1 }], // brush across the palm
+  K: one(r([0.0, 1.37, 0.31], IN, DN, 'X'), L1), // hooked index over the left index
+  L: one(r([-0.02, 1.32, 0.31], UP, IN, '1'), r([0.05, 1.27, 0.3], [-1, 0, 0.2], BK, 'B')), // index up against the flat left hand
+  M: one(r([0.03, 1.275, 0.31], [0.4, 0, 1], DN, 'three'), LPALM), // three fingers on the palm
+  N: one(r([0.03, 1.275, 0.31], [0.4, 0, 1], DN, 'two'), LPALM), // two fingers on the palm
+  P: one(r([0.0, 1.37, 0.3], IN, FW, 'O'), L1), // ring on top of the left index
+  Q: one(r([0.03, 1.21, 0.31], [0.3, -1, 0], FW, '1'), r([0.05, 1.29, 0.3], [-1, 0, 0.2], BK, 'O')), // tail under a ring
+  R: one(touch(add(LP, [0.0, 0.03, 0.02]), [0.3, 0, -1], 'X'), r(LP, [-0.3, 1, 0], BK, 'B')), // curled index on the palm
+  S: one(r([-0.025, 1.29, 0.31], [0.7, 0.5, 0], FW, 'I'), r([0.025, 1.27, 0.31], [-0.7, 0.5, 0], [0, 0, 1], 'I')), // little fingers hooked
+  T: one(r([0.0, 1.37, 0.31], IN, DN, '1'), L1), // index across the top of the left index
+  V: one(r([-0.12, 1.34, 0.31], UP, FW, 'V'), null), // one hand
+  W: one(r([-0.01, 1.3, 0.32], [0.6, 0.8, 0], FW, '4'), r([0.01, 1.3, 0.3], [-0.6, 0.8, 0], [0, 0, 1], '4')), // fingers crossed
+  X: one(r([0.0, 1.3, 0.32], [0.7, 0.7, 0], FW, '1'), r([0.0, 1.3, 0.3], [-0.7, 0.7, 0], [0, 0, 1], '1')), // index fingers crossed
+  Y: one(r([0.05, 1.21, 0.31], DN, FW, '1'), r([0.05, 1.29, 0.3], UP, BK, 'V')), // stem under a V
+  Z: [
+    ...one(touch(add(LP, [0.02, 0.06, 0.02])), r(LP, [-0.3, 1, 0], BK, 'B'), 0.05),
+    { ...k(touch(add(LP, [-0.03, 0.06, 0.02])), r(LP, [-0.3, 1, 0], BK, 'B'), 0.12, 0), press: 1 },
+    { ...k(touch(add(LP, [0.02, 0.0, 0.02])), r(LP, [-0.3, 1, 0], BK, 'B'), 0.12, 0), press: 1 },
+    { ...k(touch(add(LP, [-0.03, 0.0, 0.02])), r(LP, [-0.3, 1, 0], BK, 'B'), 0.12, 0.1), press: 1 },
+  ],
+};
+export const hasIslLetters = () => ISL_ONLY;
+
+// The ISL letters as camera references (islrec.js): the same frames, with hand-shape names turned
+// into their numbers and directions made unit length.
+export function islLetterTemplates() {
+  const hand = (q) => q && { p: q.p, f: unitv(q.f), n: unitv(q.n), h: shapeArray(q.h) };
+  return Object.fromEntries(Object.entries(ISL_LETTERS).map(([L, frames]) => [L, frames.map((f) => ({ t: f.t, R: hand(f.R), L: hand(f.L) }))]));
+}
+
 export function fingerspellFrames(word, gi) {
   const frames = [];
   const chars = word.toUpperCase().replace(/[^A-Z0-9]/g, '').split('');
+  if (ISL_ONLY) {
+    chars.forEach((ch) => {
+      const ltr = ISL_LETTERS[ch];
+      if (!ltr) return; // digits are signed as number signs (see islDigits), not spelled
+      ltr.forEach((f, j) => frames.push({ ...f, gi, ...(j === 0 ? { letter: ch } : {}) }));
+    });
+    return frames;
+  }
   chars.forEach((ch, i) => {
     let pose = letterPose(ch);
     if (i > 0 && chars[i - 1] === ch) pose = mv(pose, [-0.035, 0, 0]); // doubled letters slide
@@ -450,7 +704,9 @@ export function fingerspellFrames(word, gi) {
 export function buildFrames(tokens) {
   const frames = [];
   tokens.forEach((tok, gi) => {
-    const sign = (useISL(tok) && ISL[tok]) || SIGNS[tok] || DATASET[tok];
+    // a hand-authored Indian sign (NAMASTE) beats its converted video: palms that must press together
+    // come out of tracking centimetres apart and jittery
+    const sign = (INDIAN_AUTHORED.has(tok) && SIGNS[tok]) || (useISL(tok) && ISL[tok]) || (!ISL_ONLY && (SIGNS[tok] || DATASET[tok]));
     if (sign) {
       sign.forEach((f) => frames.push({ ...f, gi }));
     } else if (/^\d+$/.test(tok)) {
@@ -562,11 +818,51 @@ const NUMWORDS = {
   first: '1', second: '2', third: '3', fourth: '4', fifth: '5', sixth: '6', seventh: '7', eighth: '8', ninth: '9', tenth: '10', ground: '0',
 };
 
+// ---------- ISL word order ----------
+// Indian Sign Language puts time first, the verb at the end after its object (subject-object-verb),
+// "can" / "not" after the verb, and question words last:
+//   "I want a room tomorrow"   -> TOMORROW ME ROOM WANT
+//   "Where can I eat?"         -> ME EAT CAN WHERE
+//   "I do not understand."     -> ME UNDERSTAND NOT
+// Each sentence is reordered on its own. Greetings stay first, thanks and "please" last.
+const ISL_TIME = new Set(['NOW', 'TODAY', 'TONIGHT', 'TOMORROW', 'YESTERDAY', 'MORNING', 'NIGHT', 'EVENING', 'AFTERNOON', 'LATER', 'SOON', 'WEEK', 'MONTH', 'YEAR']);
+const ISL_WH = new Set(['WHAT', 'WHERE', 'WHEN', 'HOW', 'WHY', 'WHO', 'WHICH']);
+const ISL_NEG = new Set(['NOT', 'NEVER']);
+const ISL_MODAL = new Set(['CAN', 'MUST', 'SHOULD', 'WILL', 'MAY']);
+const ISL_VERB = new Set(('WANT NEED HAVE EAT DRINK SLEEP GO COME HELP UNDERSTAND SIGN KNOW SEE PAY CALL WAIT FIND LOSE FORGET LIKE LOVE STAY ' +
+  'LEAVE ARRIVE BUY RESERVE BOOK CHECK OPEN CLOSE CHANGE TAKE GIVE SEND BRING LEARN READ WRITE WORK MEET USE TRAVEL RENT CANCEL REPEAT SPEAK ' +
+  'LISTEN TELL ASK SHOW APPLY GET JOIN DRIVE WALK SIT CLEAN ORDER CARRY KEEP PUT FILL VISIT RETURN START FINISH TRY PLAY WATCH COOK WASH').split(' '));
+const ISL_FIRST = new Set(['HELLO', 'NAMASTE', 'WELCOME', 'HI', 'SORRY', 'YES', 'NO']);
+const ISL_LAST = new Set(['PLEASE', 'THANK-YOU']);
+export function islOrder(toks) {
+  // a lone "NO" is an answer and stays put; "NO" inside a clause negates it
+  const first = [], time = [], body = [], verbs = [], modal = [], neg = [], wh = [], last = [];
+  toks.forEach((t, i) => {
+    if (ISL_FIRST.has(t) && body.length + time.length === 0) first.push(t);
+    else if (ISL_LAST.has(t)) last.push(t);
+    else if (ISL_TIME.has(t) && !/^\d+$/.test(toks[i - 1] || '')) time.push(t); // "2 NIGHT" is a duration, not a time
+    else if (ISL_WH.has(t)) wh.push(t);
+    else if (ISL_NEG.has(t)) neg.push(t);
+    else if (ISL_MODAL.has(t)) modal.push(t);
+    else if (ISL_VERB.has(t) && !(t === 'CHECK' && /^(IN|OUT)$/.test(toks[i + 1] || ''))) verbs.push(t); // CHECK IN / CHECK OUT is one thing
+    else body.push(t);
+  });
+  return [...first, ...time, ...body, ...verbs, ...modal, ...neg, ...wh, ...last];
+}
+
 export function textToGloss(text, max = 80) {
+  if (!ISL_ONLY) return glossOne(text, max);
+  // ISL: sign each sentence in ISL order
+  const sentences = String(text || '').split(/(?<=[.!?])\s+/).filter((s) => s.trim());
+  // (repeats are collapsed, except number signs: 11 is ONE ONE)
+  return sentences.flatMap((s) => islOrder(glossOne(s, max))).filter((t, i, a) => t !== a[i - 1] || DIGIT_SIGN.includes(t)).slice(0, max);
+}
+
+function glossOne(text, max = 80) {
   let s = ' ' + String(text || '').toLowerCase() + ' ';
   PHRASES.forEach(([re, rep]) => (s = s.replace(re, rep)));
   if (signLang === 'isl') islPhrases.forEach(([re, tok]) => (s = s.replace(re, ` ${tok} `)));
-  datasetPhrases.forEach(([re, tok]) => (s = s.replace(re, ` ${tok} `)));
+  if (!ISL_ONLY) datasetPhrases.forEach(([re, tok]) => (s = s.replace(re, ` ${tok} `)));
   const originalWords = String(text || '').split(/\s+/);
   // Capitalised mid-sentence words are names (spelled); the first word of each sentence is not.
   const proper = new Set(
@@ -592,7 +888,7 @@ export function textToGloss(text, max = 80) {
     const isl = signLang === 'isl' && /[a-z]/.test(w) && lemmas(w.replace(/[^a-z]/g, '')).map((l) => l.toUpperCase()).find(useISL);
     if (isl) return out.push(isl);
     const base = SYN[w] || SYN[w.replace(/s$/, '')];
-    if (base) return out.push(base);
+    if (base && (!ISL_ONLY || hasSign(base))) return out.push(base); // ISL-only: a synonym counts only if it has an Indian sign
     const word = w.replace(/'s$/, '').replace(/[^a-z]/g, '');
     if (!word) return;
     if (proper.has(w) && word.length <= 8 && !hasSign(word.toUpperCase())) return out.push('FS:' + word.toUpperCase());
@@ -602,8 +898,8 @@ export function textToGloss(text, max = 80) {
     // anything else is fingerspelled
     if (word.length <= MAX_SPELL) out.push('FS:' + word.toUpperCase());
   });
-  // collapse immediate repeats
-  const dedup = out.filter((t, i) => t !== out[i - 1]);
+  // collapse immediate repeats; ISL-only: numbers become Indian number signs, digit by digit
+  const dedup = out.filter((t, i) => t !== out[i - 1] || /^\d+$/.test(t)).flatMap((t) => (/^\d+$/.test(t) ? islDigits(t) : [t]));
   return dedup.slice(0, max);
 }
 

@@ -1,6 +1,6 @@
 import { Avatar } from './avatar.js';
 import { MeeraAvatar } from './meera.js';
-import { hasSign, loadSigns, textToGloss, glossLabel, datasetReady, setSignLanguage, signLanguage, signSource } from './signs.js';
+import { hasSign, loadSigns, textToGloss, glossLabel, datasetReady, setSignLanguage, signLanguage, signSource, ISL_ONLY } from './signs.js';
 import { glossToEnglish } from './bot.js';
 import { VENUES } from './venues.js';
 import { SCHEMES, SCHEME_CATS, SCHEMES_CHECKED } from './schemes-data.js';
@@ -214,7 +214,8 @@ function highlight(gi, frame) {
 
 const MAX_SIGNS = 80;
 // The sign sequence for a reply: its hand-written gloss, or the whole text signed (always, where the venue asks for it).
-const glossOf = ({ text, gloss }) => sanitizeGloss(!V().fullSigning && gloss?.length ? gloss : textToGloss(text, MAX_SIGNS));
+// ISL-only: the hand-written glosses name American signs, so always build the signs from the reply text.
+const glossOf = ({ text, gloss }) => sanitizeGloss(!ISL_ONLY && !V().fullSigning && gloss?.length ? gloss : textToGloss(text, MAX_SIGNS));
 
 function sanitizeGloss(g) {
   return (g || [])
@@ -583,7 +584,7 @@ $('#signLang').onchange = (e) => {
   showSignLanguage();
 };
 function showSignLanguage() {
-  $('[data-status="1"]').textContent = signLanguage() === 'isl' ? 'Indian Sign Language (pilot) · ASL words marked' : V().status[1];
+  $('[data-status="1"]').textContent = ISL_ONLY ? 'Signs in Indian Sign Language' : signLanguage() === 'isl' ? 'Indian Sign Language (pilot) · ASL words marked' : V().status[1];
 }
 $('#venueSel').disabled = !!lockedVenue;
 $('#reduceMotion').checked = store.get('reduceMotion') === '1';
@@ -617,12 +618,35 @@ $('#micBtn').onclick = () => {
 
 // ---------- sign input ----------
 let recognizer = null;
-const REC_HELP = {
-  words:
-    'Try: wave = HELLO · flat hand at chin then down = THANK YOU · fist nodding = YES · Y-hand at ear = CALL · flat-O at mouth = EAT · two flat hands = ROOM · thumb-up on palm = HELP · point at camera or yourself = YOU/ME · 🤟 = LOVE. Lower your hands to finish.',
-  letters: 'Hold each ASL letter still for about half a second (J and Z not supported). Lower your hands to finish a word.',
-  numbers: 'Hold digits 0–9 still for about half a second. Lower your hands to finish the number.',
-};
+const REC_HELP = ISL_ONLY
+  ? {
+      words: 'Sign one ISL word at a time, then lower your hands so I can read it. Keep your head, shoulders and both hands in the picture. If I pick the wrong word, tap the right one under "Did you mean".',
+      letters: 'Two-handed ISL alphabet: hold each letter still for about half a second, then move your hands for the next one. Lower your hands to finish the word.',
+      numbers: 'Sign one ISL number (0–9) at a time and lower your hands after each.',
+    }
+  : {
+      words:
+        'Try: wave = HELLO · flat hand at chin then down = THANK YOU · fist nodding = YES · Y-hand at ear = CALL · flat-O at mouth = EAT · two flat hands = ROOM · thumb-up on palm = HELP · point at camera or yourself = YOU/ME · 🤟 = LOVE. Lower your hands to finish.',
+      letters: 'Hold each ASL letter still for about half a second (J and Z not supported). Lower your hands to finish a word.',
+      numbers: 'Hold digits 0–9 still for about half a second. Lower your hands to finish the number.',
+    };
+
+// "Did you mean…?": the camera's runner-up words; tapping one replaces what it just added
+function showAlts(alts, replace) {
+  const box = $('#recAlts');
+  box.querySelectorAll('button').forEach((b) => b.remove());
+  box.hidden = !alts?.length;
+  (alts || []).forEach((a) => {
+    const b = document.createElement('button');
+    b.textContent = glossLabel(a);
+    b.onclick = () => {
+      replace(a);
+      box.hidden = true;
+      renderBuffer();
+    };
+    box.appendChild(b);
+  });
+}
 $('#recHelp').textContent = REC_HELP.words;
 
 function renderBuffer() {
@@ -705,15 +729,25 @@ async function startCamera() {
   $('#camLoading').textContent = 'Starting camera and hand tracking…';
   try {
     if (!recognizer) {
-      const { SignRecognizer } = await import('./recognizer.js');
-      recognizer = new SignRecognizer($('#cam'), $('#camOverlay'), {
+      // ISL-only: match against the ISL signs (islrec.js); otherwise the rule-based ASL recognizer
+      const Rec = ISL_ONLY ? (await import('./islrec.js')).ISLRecognizer : (await import('./recognizer.js')).SignRecognizer;
+      recognizer = new Rec($('#cam'), $('#camOverlay'), {
         onFrame: ({ shape, zone, progress, pending }) => {
           $('#handShape').textContent = pending ? `${shape} → ${glossLabel(pending)}` : shape;
           $('#handZone').textContent = zone && zone !== 'neutral' ? zone : '';
           $('#holdBar').style.width = (progress || 0) * 100 + '%';
         },
-        onGloss: (g) => pushGloss(g),
-        onLetter: (ch) => pushChar(ch),
+        onGloss: (g, alts) => {
+          pushGloss(g);
+          showAlts(alts, (a) => (state.buffer[state.buffer.length - 1].tok = a));
+        },
+        onLetter: (ch, alts) => {
+          pushChar(ch);
+          showAlts(alts, (a) => {
+            const last = state.buffer[state.buffer.length - 1];
+            last.tok = last.tok.slice(0, -1) + a;
+          });
+        },
         onIdle: () => {
           closeWord();
           if ($('#autoSend').checked && state.buffer.length && state.recMode === 'words') translateBuffer();
@@ -721,6 +755,8 @@ async function startCamera() {
       });
       recognizer.setMode(state.recMode);
     }
+    // the venue's sign-board words can be signed to the camera too
+    recognizer.setExtraWords?.(Object.values(V().board || {}).flat());
     if (await recognizer.start()) $('#camLoading').hidden = true;
   } catch (e) {
     console.error(e);
@@ -820,8 +856,9 @@ function resetConversation() {
   renderFlight();
   avatar.stop();
 }
-function greet() {
+async function greet() {
   const g = V().greeting;
+  await datasetReady; // (see perform: before the sign index loads, WELCOME etc. would show spelled out)
   addMsg('bot', g.text, { gloss: glossOf(g) });
   perform(g);
 }

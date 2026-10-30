@@ -34,7 +34,9 @@ const send = (method, params = {}) => new Promise((r) => { const i = ++id; pendi
 const ev = async (expression) => (await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })).result?.result?.value;
 
 await send('Page.enable');
-await send('Page.navigate', { url: 'http://localhost:5173/' });
+await send('Network.enable');
+await send('Network.setCacheDisabled', { cacheDisabled: true }); // always the current app code
+await send('Page.navigate', { url: process.env.APP_URL || 'http://localhost:5173/' }); // APP_URL: e.g. a copy of the app on another port
 await sleep(4000);
 // freeze Aria: stop idle playback so poses are exact
 await ev(`(()=>{document.getElementById('welcome')?.remove();const a=aria.avatar;a.queue=[];a.frame=null;a.speed=0;return true})()`);
@@ -48,6 +50,10 @@ for (const g of glosses) {
   const n = doc.frames.length;
   const ks = [...new Set(Array.from({ length: PICK }, (_, i) => Math.round((i * (n - 1)) / (PICK - 1))))];
   picks[g] = ks.map((k) => ({ k, vf: doc.videoFrames[k] }));
+  // pose the keyframes as the app plays them (ISL signs are cleaned up as they load, signs.js)
+  if (SET === 'isl') {
+    doc.frames = await ev(`(async()=>{const S=await import('/js/signs.js');return S.pace(S.settle((S.ISL_FIX[${JSON.stringify(g)}] || ((f) => f))(S.crisp(S.deglitch(S.despike(${JSON.stringify(doc.frames)}))))))})()`);
+  }
   for (const k of ks) {
     await ev(`(()=>{const a=aria.avatar;const f=${JSON.stringify(doc.frames[k])};a.frame=null;a.queue=[];a.state=a._poseState(f);a._apply();return true})()`);
     await sleep(120);

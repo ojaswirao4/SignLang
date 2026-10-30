@@ -1430,6 +1430,9 @@ export class MeeraAvatar extends Avatar {
       const tw = forearmTwist(E.clone().sub(S).normalize(), f, handY, handN, -sgn);
       cost += Math.min(1, Math.abs(tw.twist - feasibleTwist(tw.twist))) * 0.5 * smooth(0.2, 0.5, tw.bend);
       if (E.y > S.y - 0.04) cost += (E.y - S.y + 0.04) * 20; // elbows stay below the shoulders
+      // signs held close to the chest (NAMASTE: tuck) keep the elbows down at her sides and bend the
+      // wrists back instead, as people do; the straightest wrist there would lift the elbows into wings
+      if (this.frame?.tuck && E.y > S.y - 0.2) cost += (E.y - S.y + 0.2) * 20 * this.frame.tuck;
       if (E.x * sgn < 0.08) cost += (0.08 - E.x * sgn) * 20; // and out to the side, not in front of the body
       if (E.z < -0.06) cost += (-0.06 - E.z) * 20; // and not pulled far behind her
       if (animating) {
@@ -1452,14 +1455,19 @@ export class MeeraAvatar extends Avatar {
     // Video tracking sometimes asks for a palm turned further than a forearm can rotate (e.g. thumb down
     // and palm out, ~170 degrees from neutral: the hand looked screwed on backwards). Turn the hand about
     // the forearm to what a real arm does (feasibleTwist); the finger direction and position are unchanged.
-    // The correction glides (<= ~12 degrees a frame) so it never snaps.
+    // The correction keeps pace with the requested turn (or the hand shows the impossible twist while it
+    // lags behind), but where the request itself jumps it glides (<= ~3.5 degrees a frame beyond the
+    // request's own change, never over ~14), so it never snaps or spins.
     const tw = forearmTwist(best.E.clone().sub(S).normalize(), best.f, handY, handN, -sgn);
     let target = (tw.twist - feasibleTwist(tw.twist)) * smooth(0.2, 0.5, tw.bend) * sgn; // turn by (feasible - t) * side
     if (animating && arm.corr !== undefined) {
-      if (arm.corrTick !== this._tick) (arm.corrBase = arm.corr), (arm.corrTick = this._tick);
+      if (arm.corrTick !== this._tick) (arm.corrBase = arm.corr), (arm.corrReq = arm.lastReq ?? tw.twist), (arm.corrTick = this._tick);
       target += Math.round((arm.corrBase - target) / (2 * Math.PI)) * 2 * Math.PI; // +-180 degrees is the same turn
-      arm.corr = arm.corrBase + clamp(target - arm.corrBase, -0.2, 0.2);
+      const dReq = Math.abs(Math.atan2(Math.sin(tw.twist - arm.corrReq), Math.cos(tw.twist - arm.corrReq)));
+      const step = Math.min(0.25, 0.06 + 3 * dReq); // (target moves up to ~3x the request near the fold)
+      arm.corr = arm.corrBase + clamp(target - arm.corrBase, -step, step);
     } else arm.corr = target;
+    arm.lastReq = tw.twist;
     if (arm.corr) quat = new THREE.Quaternion().setFromAxisAngle(best.f, arm.corr).multiply(quat);
     // Likewise the wrist bend: some keyframes fold the hand back 90-170 degrees against the forearm.
     // Bends up to 65 degrees are kept as recorded; past that the hand eases toward the forearm and never
@@ -1467,10 +1475,40 @@ export class MeeraAvatar extends Avatar {
     const Yc = UPV.clone().applyQuaternion(quat), bendAng = Math.acos(clamp(Yc.dot(best.f), -1, 1));
     if (bendAng > BEND_SOFT) {
       const shown = BEND_SOFT + (BEND_MAX - BEND_SOFT) * (1 - Math.exp(-(bendAng - BEND_SOFT) / (BEND_MAX - BEND_SOFT)));
-      const ax = new THREE.Vector3().crossVectors(Yc, best.f);
-      if (ax.lengthSq() < 1e-8) ax.crossVectors(Yc, Math.abs(Yc.x) < 0.9 ? new THREE.Vector3(1, 0, 0) : UPV);
-      quat = new THREE.Quaternion().setFromAxisAngle(ax.normalize(), bendAng - shown).multiply(quat);
-    }
+      // The fingers go on the edge of that cone around the forearm, on the side the requested fingers
+      // lean to. With the fingers pointing nearly back along the forearm that side is undefined and
+      // flipped from frame to frame (the hand spun half a turn in one frame, THEIR); there (and only
+      // there, faded in by how undefined it is) the side keeps last frame's and turns toward the
+      // requested one about the forearm no faster than a wrist circles (~400 deg/s). One shortest turn
+      // onto the cone is then never ambiguous: a lagging side only exists with the fingers nearly back,
+      // ~95 degrees from any point on the cone.
+      const perp = (v) => v.clone().addScaledVector(best.f, -v.dot(best.f));
+      const want = perp(Yc), sinB = want.length();
+      const own = sinB > 1e-6 ? want.multiplyScalar(1 / sinB) : null;
+      const kept = animating && arm.bendSide ? perp(arm.bendSide) : null;
+      let side = own;
+      if (kept && kept.lengthSq() > 1e-6) {
+        kept.normalize();
+        if (!own) side = kept;
+        else {
+          const a = Math.atan2(new THREE.Vector3().crossVectors(kept, own).dot(best.f), clamp(kept.dot(own), -1, 1));
+          // 1 = the requested side is well defined: follow it. Otherwise turn toward it no faster than a
+          // wrist circles; the limit opens up smoothly only as it becomes well defined (blending the turn
+          // itself by w still jumped ~70 degrees a frame half-way, WHERE).
+          const w = smooth(0.25, 0.5, sinB);
+          const lim = 0.12 + w ** 4 * Math.PI;
+          side = kept.clone().applyAxisAngle(best.f, clamp(a, -lim, lim));
+        }
+      }
+      side ||= new THREE.Vector3().crossVectors(best.f, UPV).normalize();
+      arm.bendSide = side.clone();
+      const Yout = best.f.clone().multiplyScalar(Math.cos(shown)).addScaledVector(side, Math.sin(shown)).normalize();
+      quat = new THREE.Quaternion().setFromUnitVectors(Yc, Yout).multiply(quat);
+    } else arm.bendSide = null;
+    // the forearm turn the hand finally shows (for tools/cislr audits; undefined with a straight elbow)
+    const shownTw = forearmTwist(best.E.clone().sub(S).normalize(), best.f, UPV.clone().applyQuaternion(quat), new THREE.Vector3(0, 0, 1).applyQuaternion(quat), -sgn);
+    arm.twistShown = shownTw.bend > 0.3 ? shownTw.twist : null;
+    arm.twistBend = shownTw.bend;
     arm.upper.position.copy(S);
     arm.upper.quaternion.setFromUnitVectors(UPV, best.E.clone().sub(S).normalize());
     arm.fore.position.copy(best.E);

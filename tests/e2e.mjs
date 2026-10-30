@@ -372,22 +372,26 @@ await check('switching back to the hotel restores it', async () => {
   assert(s.strip && s.tile === 'Check-in' && /Kesar Palace/.test(s.greet), JSON.stringify(s));
   return s.tile;
 });
-await check('Indian Sign Language: Indian signs first, ASL fallback marked, then back to ASL', async () => {
+// ISL-only build: every sign is Indian (dataset signs, the two-handed ISL alphabet, number signs),
+// nothing is marked as American, sentences are in ISL order, and the language can't be switched.
+await check('Indian Sign Language only: Indian signs, ISL alphabet and order, no ASL', async () => {
   const r = await ev(`
-    const sel = document.querySelector('#signLang');
-    sel.value = 'isl'; sel.dispatchEvent(new Event('change'));
-    const { textToGloss, signSource } = await import('/js/signs.js');
-    const text = 'Hello! Good morning, thank you. The hospital is near the station.';
+    const { textToGloss, signSource, fingerspellFrames } = await import('/js/signs.js');
+    const text = 'Hello! Good morning, thank you. The hospital is near the station. I want a room tomorrow.';
     const g = textToGloss(text);
     aria.perform({ text });
     await new Promise((r) => setTimeout(r, 600));
-    const marked = [...document.querySelectorAll('#glossStrip .gtok.asl')].map((t) => t.dataset.label);
-    const out = { isl: g.filter((t) => signSource(t) === 'isl'), marked, status: document.querySelector('[data-status="1"]').textContent };
-    sel.value = 'asl'; sel.dispatchEvent(new Event('change'));
-    out.back = document.querySelector('[data-status="1"]').textContent;
-    return out;`);
-  assert(['HELLO', 'GOOD-MORNING', 'HOSPITAL'].every((t) => r.isl.includes(t)) && r.marked.length && /Indian/.test(r.status) && /American/.test(r.back), JSON.stringify(r));
-  return `Indian: ${r.isl.join(' ')}; ASL marked: ${r.marked.join(' ')}`;
+    const spelled = fingerspellFrames('AEB', 0);
+    return {
+      gloss: g, notIndian: g.filter((t) => signSource(t) !== 'isl'),
+      marked: [...document.querySelectorAll('#glossStrip .gtok.asl')].map((t) => t.dataset.label),
+      twoHandedLetters: spelled.length && spelled.every((f) => f.L),
+      status: document.querySelector('[data-status="1"]').textContent,
+      canSwitch: !document.querySelector('#signLang').disabled,
+    };`);
+  const order = r.gloss.join(' ').includes('TOMORROW ME ROOM WANT') || r.gloss.join(' ').includes('TOMORROW I ROOM WANT');
+  assert(!r.notIndian.length && !r.marked.length && r.twoHandedLetters && order && /Indian/.test(r.status) && !r.canSwitch, JSON.stringify(r));
+  return r.gloss.join(' ');
 });
 
 await sleep(2500);

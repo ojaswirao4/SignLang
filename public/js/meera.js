@@ -446,6 +446,7 @@ function forearmTwist(upperDir, foreDir, handY, handN, side) {
 // whose intended pose is the neutral one. Continuous all the way round, so a hand never snaps.
 const SUPINATE = 1.5, PRONATE = -1.6, FOLD = 2.27;
 const BEND_SOFT = 1.13, BEND_MAX = 1.48; // wrist bend: kept as recorded up to 65 degrees, never past 85
+const HAND_TURN = (800 * Math.PI) / 180; // fastest a hand turns, radians per second (brisk signing; see _solveArm)
 function feasibleTwist(t) {
   if (t > FOLD) return (SUPINATE * (Math.PI - t)) / (Math.PI - FOLD);
   if (t < -FOLD) return (PRONATE * (Math.PI + t)) / (Math.PI - FOLD);
@@ -1505,6 +1506,15 @@ export class MeeraAvatar extends Avatar {
       const Yout = best.f.clone().multiplyScalar(Math.cos(shown)).addScaledVector(side, Math.sin(shown)).normalize();
       quat = new THREE.Quaternion().setFromUnitVectors(Yc, Yout).multiply(quat);
     } else arm.bendSide = null;
+    // Last safety net: however the turns above add up, the hand turns no faster than HAND_TURN in real
+    // time (the twist correction catching up on top of a requested turn spun at ~1600 deg/s out of
+    // fingerspelling into HELP); it catches up over the next frames instead.
+    if (animating && arm.qOut) {
+      if (arm.qTick !== this._tick) (arm.qBase = arm.qOut.clone()), (arm.qTick = this._tick);
+      const ang = arm.qBase.angleTo(quat), max = HAND_TURN * (this._dt || 1 / 60);
+      if (ang > max) quat = arm.qBase.clone().slerp(quat, max / ang);
+    }
+    arm.qOut = quat.clone();
     // the forearm turn the hand finally shows (for tools/cislr audits; undefined with a straight elbow)
     const shownTw = forearmTwist(best.E.clone().sub(S).normalize(), best.f, UPV.clone().applyQuaternion(quat), new THREE.Vector3(0, 0, 1).applyQuaternion(quat), -sgn);
     arm.twistShown = shownTw.bend > 0.3 ? shownTw.twist : null;
@@ -1520,8 +1530,17 @@ export class MeeraAvatar extends Avatar {
   }
 
   _advance(dt) {
-    this._tick = (this._tick || 0) + 1; // one tick per animation frame (several solves can happen per frame)
-    return super._advance(dt);
+    // (it calls itself for the time left over at a keyframe boundary: only the outer call is the frame)
+    if (!this._advDepth) {
+      this._tick = (this._tick || 0) + 1; // one tick per animation frame (several solves can happen per frame)
+      if (dt > 0) this._dt = dt; // real time of this frame (the hand's turn limit)
+    }
+    this._advDepth = (this._advDepth || 0) + 1;
+    try {
+      return super._advance(dt);
+    } finally {
+      this._advDepth--;
+    }
   }
 
   _updateSkins() {

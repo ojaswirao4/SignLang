@@ -753,6 +753,19 @@ export function buildFrames(tokens) {
     // small pause between signs
     if (frames.length) frames[frames.length - 1] = { ...frames[frames.length - 1], hold: (frames[frames.length - 1].hold || 0) + 0.08 };
   });
+  // The step from one sign into the next uses the next sign's own timing, so a big change of hand
+  // turn between them spun (out of M-E-E-R-A into HELP at ~1600 deg/s): pace it like steps within signs.
+  for (let i = 1; i < frames.length; i++) {
+    if (frames[i].gi === frames[i - 1].gi) continue;
+    let d = 0, turn = 0;
+    for (const s of ['R', 'L']) {
+      const a = frames[i - 1][s] || REST[s], b = frames[i][s] || REST[s];
+      d = Math.max(d, Math.hypot(b.p[0] - a.p[0], b.p[1] - a.p[1], b.p[2] - a.p[2]));
+      turn = Math.max(turn, handTurnDeg(a, b));
+    }
+    const t = Math.max(frames[i].t || 0.3, d / MAX_SPEED, turn / MAX_TURN);
+    if (t !== frames[i].t) frames[i] = { ...frames[i], t };
+  }
   return frames;
 }
 

@@ -463,13 +463,20 @@ export function settle(frames) {
   restShape ||= shapeArray('rest');
   const unit = (v) => { const l = Math.hypot(...v) || 1; return v.map((x) => x / l); };
   const mix = (a, b, w) => a.map((x, i) => x + (b[i] - x) * w);
+  // a hand resting or unseen in most of the sign is the passive hand: it rests throughout (HOTEL's
+  // left hand, tracked in just its first keyframe, sat on her hip there)
+  const passive = {};
+  for (const s of ['R', 'L']) {
+    const hs = frames.map((f) => f[s]).filter((h) => h?.p);
+    passive[s] = hs.length > 0 && hs.filter((h) => h.est || h.p[1] < SETTLE_HI).length / hs.length >= 0.6;
+  }
   return frames.map((f) => {
     let out = f;
     for (const s of ['R', 'L']) {
       const h = f[s];
       if (!h?.p) continue;
       const [hi, lo] = h.est ? [SETTLE_EST_HI, SETTLE_EST_LO] : [SETTLE_HI, SETTLE_LO];
-      const w = Math.max(0, Math.min(1, (hi - h.p[1]) / (hi - lo)));
+      const w = passive[s] ? 1 : Math.max(0, Math.min(1, (hi - h.p[1]) / (hi - lo)));
       if (!w) continue;
       const rest = REST[s];
       out = out === f ? { ...f } : out;
@@ -571,9 +578,37 @@ const withShape = (side, name) => (frames) => {
   const s = shapeArray(name);
   return frames.map((f) => (raised(f[side]) ? { ...f, [side]: { ...f[side], h: s } } : f));
 };
+// While the hand is up (above `from`, fully by `full`), ease it toward a pose: any of p (position),
+// dp (shift), f (finger direction; the palm is kept square to it), n (palm direction), shape.
+const toward = (side, from, full, { p, dp, f, n, shape }) => (frames) => {
+  const u = (v) => { const l = Math.hypot(...v) || 1; return v.map((x) => x / l); };
+  const mix = (a, b, w) => a.map((x, i) => x + (b[i] - x) * w);
+  const s = shape && shapeArray(shape);
+  return frames.map((fr) => {
+    const h = fr[side];
+    if (!h?.p) return fr;
+    const w = Math.max(0, Math.min(1, (h.p[1] - from) / (full - from)));
+    if (!w) return fr;
+    let P = h.p, F = h.f, N = h.n, H = h.h;
+    if (p) P = mix(P, p, w);
+    if (dp) P = P.map((x, i) => x + dp[i] * w);
+    if (f) F = u(mix(F, f, w));
+    if (n) N = u(mix(N, n, w));
+    N = u(N.map((x, i) => x - F[i] * (N[0] * F[0] + N[1] * F[1] + N[2] * F[2]))); // square to the fingers
+    if (s && Array.isArray(H)) H = mix(H, s, w);
+    return { ...fr, [side]: { ...h, p: P, f: F, n: N, h: H } };
+  });
+};
 export const ISL_FIX = {
   I: withShape('R', 'A'), // thumb-up fist toward herself (read as a loose, half-bent hand)
   THREE: withShape('R', 'W'), // index, middle and ring up, thumb holding the little finger (read as a flat hand)
+  // palm over the eyes (only the fingertips are seen near the face, and eyes aren't fingertip contacts)
+  NIGHT: toward('R', 1.45, 1.58, { p: [-0.01, 1.72, 0.17], f: [0.3, 0.95, 0], n: [0, 0, -1], shape: 'flat' }),
+  // index pointing down (low-quality tracking read it pointing forward, fingers half-bent)
+  FLOOR: toward('R', 1.2, 1.3, { f: [0.15, -0.9, 0.4], shape: '1' }),
+  // two fingers together, pointing across the chest, a little lower (read as a claw at the shoulder)
+  // (its path peaks ~6 cm above the rest, at her shoulder; the signer's stays at the chest: lowered more there)
+  NAME: (fr) => toward('R', 1.33, 1.4, { dp: [0, -0.06, 0] })(toward('R', 1.2, 1.3, { dp: [0.03, -0.07, 0], f: [0.9, -0.1, 0.4], shape: 'H' })(fr)),
 };
 
 // Fetch the dataset signs a gloss needs before playing it.

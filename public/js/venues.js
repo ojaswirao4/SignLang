@@ -196,7 +196,7 @@ export const VENUES = {
       Greetings: GREETINGS,
       Questions: QUESTIONS,
       Schemes: ['GOVERNMENT', 'MONEY', 'MONTH', 'CARD', 'DEAF', 'HEARING-AID', 'SCHOOL', 'COLLEGE', 'STUDY', 'WORK', 'BUSINESS', 'TRAIN', 'DRIVE', 'FREE'],
-      Papers: ['PAPER', 'FORM', 'DOCUMENT', 'LAW', 'CHILD', 'FAMILY', 'SIGN-LANGUAGE', 'INTERPRETER', 'DOCTOR', 'HOSPITAL', 'PHONE', 'INTERNET', 'FIND', 'LEARN'],
+      Papers: ['PAPER', 'FORM', 'DOCUMENT', 'LAW', 'CHILD', 'FAMILY', 'SIGN-LANGUAGE', 'INTERPRETER', 'DOCTOR', 'HOSPITAL', 'PHONE', 'INTERNET', 'FIND', 'LEARN', 'GET'],
     },
     createBot: createSchemesBot,
     templates: SCHEMES_TEMPLATES,

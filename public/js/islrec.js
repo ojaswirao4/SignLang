@@ -2,8 +2,8 @@
 // MediaPipe Pose + Hands track the signer; each frame is turned into the same keyframe format as
 // Meera's signs, with the same maths as the video converter (tools/wlasl/extract.py: torso frame,
 // shoulder-width scaling, finger bends). A sign is the stretch between the hands rising and dropping
-// again; it is matched (islmatch.js) against ISL references: the camera vocabulary (the words Meera
-// uses most, plus the venue's sign board), the ISL alphabet, or the number signs.
+// again; it is matched (islmatch.js) against ISL references: the venue's sign-board words (without
+// a board, the words Meera uses most), the ISL alphabet, or the number signs.
 // Same interface as SignRecognizer (recognizer.js): start/stop/setMode and the on* callbacks, except
 // that onGloss also gets the runner-up words, for a "Did you mean…?" choice.
 import { rank, topWords, isConfident, mirrorFrames, toBody, BODY_W } from './islmatch.js';
@@ -162,7 +162,9 @@ export class ISLRecognizer {
     if (this.mode === 'numbers') toks = DIGITS;
     else {
       const vocab = await fetch(SIGNS + 'camera_vocab.json').then((r) => r.json()).catch(() => []);
-      toks = [...new Set([...this.extraWords, ...vocab])];
+      // With a venue's sign board, only its words: among all ~400 words, too many look alike from one
+      // camera (a hand raised beside the head is HEARING-AID, PERSONAL, UNDERSTAND, UP...)
+      toks = this.extraWords.length ? [...new Set(this.extraWords)] : vocab;
     }
     toks = toks.filter((t) => index.has(t));
     const alt = new Set(await fetch(ALT + 'index.json').then((r) => (r.ok ? r.json() : [])).catch(() => []));

@@ -40,7 +40,8 @@ function synth(frames) {
   const drop = +(process.env.DROP || 0);
   return frames.map((f) => ({ t: (f.t ?? 0.1) * sp * (0.7 + rnd() * 0.6), R: hand(f.R), L: rnd() < drop ? null : hand(f.L) }));
 }
-const queries = process.env.SYNTH ? vocabToks.filter((_, i) => i % 5 === 0) : tests;
+// ONLY=GOODBYE (with SYNTH): test just that sign, 20 simulated signers
+const queries = process.env.ONLY ? Array(20).fill(process.env.ONLY) : process.env.SYNTH ? vocabToks.filter((_, i) => i % 5 === 0) : tests;
 for (const t of queries) {
   const live = process.env.SYNTH ? synth(templates[t]) : load(join(HERE, 'test_signs', t + '.json'));
   const r = rank(live, templates, prepared);

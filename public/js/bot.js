@@ -419,6 +419,7 @@ const TEMPLATES = [
   [['THANK-YOU'], 'Thank you!'],
   [['HELLO'], 'Hello!'],
   [['BYE'], 'Goodbye!'],
+  [['GOODBYE'], 'Goodbye!'],
   [['YES'], 'Yes.'],
   [['NO'], 'No.'],
   [['GOOD'], 'Good, thank you.'],

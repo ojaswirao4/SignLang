@@ -35,7 +35,7 @@ const ICONS = {
   map: 'M20.5 3l-.2.1L15 5.1 9 3 3.4 4.9c-.2.1-.4.3-.4.5V20.5c0 .3.2.5.5.5l.2-.1L9 18.9l6 2.1 5.6-1.9c.2-.1.4-.3.4-.5V3.5c0-.3-.2-.5-.5-.5zM15 19l-6-2.1V5l6 2.1z',
 };
 
-const GREETINGS = ['NAMASTE', 'HELLO', 'THANK-YOU', 'PLEASE', 'SORRY', 'YES', 'NO', 'GOOD', 'BYE'];
+const GREETINGS = ['NAMASTE', 'HELLO', 'THANK-YOU', 'PLEASE', 'SORRY', 'YES', 'NO', 'GOOD', 'GOODBYE'];
 const QUESTIONS = ['ME', 'YOU', 'WHAT', 'WHERE', 'WHEN', 'HOW', 'WANT', 'NEED', 'HELP', 'CAN'];
 
 export const VENUES = {

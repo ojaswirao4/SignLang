@@ -46,6 +46,9 @@ print(f'{len(todo)} words to do, {used} of them appear in Meera\'s answers (conv
 # only those that have a sign). Matching against all ~4,700 at once would confuse similar signs.
 allw = sorted(manifest, key=lambda w: -uses(w))
 vocab = [w.upper().replace(' ', '-') for w in allw if uses(w)][:400]
+# words guests sign that Meera seldom says, so the count above misses them
+ALWAYS = ['GOODBYE']
+vocab += [w for w in ALWAYS if w not in vocab]
 (APP / 'signs' / 'isl' / 'camera_vocab.json').write_text(json.dumps(vocab), encoding='utf-8')
 print(f'camera vocabulary: {len(vocab)} words -> public/signs/isl/camera_vocab.json')
 print('first 30:', ', '.join(todo[:30]))

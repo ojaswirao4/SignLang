@@ -791,7 +791,7 @@ const PHRASES = [
   [/\bhearing aids?\b/g, ' HEARING-AID '],
 ];
 const SYN = {
-  hi: 'HELLO', hello: 'HELLO', hey: 'HELLO', welcome: 'WELCOME', bye: 'BYE', goodbye: 'BYE',
+  hi: 'HELLO', hello: 'HELLO', hey: 'HELLO', welcome: 'WELCOME', bye: 'GOODBYE', goodbye: 'GOODBYE', // (ISL's sign is GOODBYE; BYE has none and was spelled out)
   please: 'PLEASE', sorry: 'SORRY', apologize: 'SORRY', yes: 'YES', yeah: 'YES', sure: 'YES', certainly: 'YES',
   no: 'NO', not: 'NOT', "don't": 'NOT', "can't": 'NOT', cannot: 'NOT', never: 'NOT',
   i: 'ME', me: 'ME', my: 'ME', mine: 'ME', we: 'ME', our: 'ME', us: 'ME',

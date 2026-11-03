@@ -457,7 +457,8 @@ export function joinNumbers(glosses) {
 }
 
 export function composeSentence(glosses) {
-  let g = joinNumbers(glosses.filter(Boolean));
+  // ISL signs "myself" as I as often as ME (it read as a noun: "I want an i hearing aid")
+  let g = joinNumbers(glosses.filter(Boolean)).map((t) => (t === 'I' ? 'ME' : t));
   // "2 NIGHT" / "3 DAY" is a duration: "for 2 nights"
   let dur = '';
   const di = g.findIndex((t, i) => /^\d+$/.test(t) && ['NIGHT', 'DAY', 'HOUR', 'MINUTE', 'WEEK', 'MONTH', 'YEAR'].includes(g[i + 1]));

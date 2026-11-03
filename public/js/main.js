@@ -712,6 +712,7 @@ async function openSign() {
   $('#services').hidden = true; // make room for the camera and the conversation
   $('#signBtn').classList.add('active');
   $('#signBtn').setAttribute('aria-pressed', 'true');
+  dockCamera();
   if (!$('#camPane').hidden) await startCamera();
 }
 function closeSign() {
@@ -719,10 +720,34 @@ function closeSign() {
   $('#services').hidden = state.mode !== 'concierge';
   $('#signBtn').classList.remove('active');
   $('#signBtn').setAttribute('aria-pressed', 'false');
+  dockCamera();
   recognizer?.stop();
 }
 $('#signBtn').onclick = () => ($('#signCard').hidden ? openSign() : closeSign());
 $('#signClose').onclick = closeSign;
+
+// On a laptop or desktop the camera shows beside Meera, on her half of the stage, as large as fits above
+// her captions: the panel's own preview was too small to see whether you're in the picture, and took the
+// chat's room. (It stays fixed over the stage rather than moving there: moving a playing video pauses it.)
+// On a phone it stays in the panel.
+const wide = matchMedia('(min-width: 900px)');
+function dockCamera() {
+  const on = wide.matches && !$('#signCard').hidden && !$('#camPane').hidden;
+  const cam = $('.cam-wrap'), stage = $('.stage');
+  stage.classList.toggle('signing', on);
+  cam.classList.toggle('docked', on);
+  if (!on) return cam.removeAttribute('style');
+  // Meera on the left 45%, the camera on the right 55%, a 4:3 picture as large as fits above the captions
+  const s = stage.getBoundingClientRect(), capTop = $('.caption').getBoundingClientRect().top;
+  const top = s.top + 62, room = Math.max(150, capTop - 14 - top);
+  let width = s.width * 0.55 - 22, height = (width * 3) / 4;
+  if (height > room) (height = room), (width = (room * 4) / 3);
+  const left = s.left + s.width * 0.45 + (s.width * 0.55 - 16 - width) / 2;
+  Object.assign(cam.style, { left: `${left}px`, top: `${top + (room - height) / 2}px`, width: `${width}px`, height: `${height}px` });
+}
+new ResizeObserver(dockCamera).observe($('.stage'));
+wide.addEventListener('change', dockCamera);
+addEventListener('resize', dockCamera);
 
 async function startCamera() {
   $('#camLoading').hidden = false;
@@ -779,6 +804,7 @@ document.querySelectorAll('.sign-tabs button[data-src]').forEach((b) =>
     const cam = b.dataset.src === 'camera';
     $('#camPane').hidden = !cam;
     $('#boardPane').hidden = cam;
+    dockCamera();
     if (cam) startCamera();
     else recognizer?.stop();
   })

@@ -264,7 +264,13 @@ svg { width: 18px; height: 18px; fill: currentColor; flex: none; }
 .sign-tabs button:not(.icon-btn), .rec-tabs button { border: 1px solid var(--line2); background: var(--paper); border-radius: 10px; padding: 6px 12px; font-size: 12.5px; font-weight: 600; color: var(--muted); }
 .sign-tabs button.active, .rec-tabs button.active { color: var(--teal); border-color: var(--teal2); background: var(--tealSoft); }
 .cam-wrap { position: relative; border-radius: 14px; overflow: hidden; background: #111; aspect-ratio: 4 / 3; max-height: 30vh; margin: 0 auto; width: 100%; }
-.cam-wrap video, .cam-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+/* contain, not cover: the whole camera picture shows (what the tracker sees), so "am I in the picture"
+   can be judged; cropping hid the edges where raised hands go */
+.cam-wrap video, .cam-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; transform: scaleX(-1); }
+/* signing on a laptop / desktop: Meera on the left half of the stage, the camera on the right half
+   (placed by dockCamera() in main.js); the panel keeps the signs, buttons and a roomy chat */
+.stage.signing .avatar-canvas { width: 45% !important; }
+.cam-wrap.docked { position: fixed; z-index: 5; max-height: none; aspect-ratio: auto; margin: 0; border: 1px solid rgba(217, 179, 106, 0.35); box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35); }
 .cam-loading { position: absolute; inset: 0; display: grid; place-items: center; font-size: 13px; color: #cfc6b8; text-align: center; padding: 20px; }
 .cam-hud { position: absolute; left: 10px; top: 10px; display: flex; gap: 6px; }
 .hud-shape, .hud-zone { padding: 4px 10px; border-radius: 8px; background: rgba(0, 0, 0, 0.55); font-size: 12px; font-weight: 700; color: #fff; }

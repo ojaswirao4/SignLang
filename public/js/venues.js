@@ -198,6 +198,13 @@ export const VENUES = {
       Schemes: ['GOVERNMENT', 'MONEY', 'MONTH', 'CARD', 'DEAF', 'HEARING-AID', 'SCHOOL', 'COLLEGE', 'STUDY', 'WORK', 'BUSINESS', 'TRAIN', 'DRIVE', 'FREE'],
       Papers: ['PAPER', 'FORM', 'DOCUMENT', 'LAW', 'CHILD', 'FAMILY', 'SIGN-LANGUAGE', 'INTERPRETER', 'DOCTOR', 'HOSPITAL', 'PHONE', 'INTERNET', 'FIND', 'LEARN', 'GET'],
     },
+    // The camera follows ISL word order: a sentence opens with its topic (or is a greeting on its own),
+    // question words come last. So the first sign is matched only against these, the later ones
+    // against the rest; fewer look-alikes to choose from (HEARING-AID vs PHONE, WHAT).
+    camera: {
+      first: [...GREETINGS, 'ME', 'YOU', 'GOVERNMENT', 'MONEY', 'MONTH', 'CARD', 'DEAF', 'HEARING-AID', 'SCHOOL', 'COLLEGE', 'STUDY', 'WORK', 'BUSINESS', 'TRAIN', 'DRIVE', 'CHILD', 'FAMILY', 'SIGN-LANGUAGE', 'INTERPRETER'],
+      later: [...QUESTIONS, 'PLEASE', 'GOVERNMENT', 'MONEY', 'MONTH', 'CARD', 'DEAF', 'HEARING-AID', 'SCHOOL', 'COLLEGE', 'STUDY', 'WORK', 'BUSINESS', 'TRAIN', 'DRIVE', 'FREE', 'PAPER', 'FORM', 'DOCUMENT', 'LAW', 'CHILD', 'FAMILY', 'SIGN-LANGUAGE', 'INTERPRETER', 'DOCTOR', 'HOSPITAL', 'PHONE', 'INTERNET', 'FIND', 'LEARN', 'GET'],
+    },
     createBot: createSchemesBot,
     templates: SCHEMES_TEMPLATES,
   },

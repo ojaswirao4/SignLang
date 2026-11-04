@@ -14,6 +14,8 @@ const HAND_MODEL = 'https://storage.googleapis.com/mediapipe-models/hand_landmar
 const POSE_MODEL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
 const SIGNS = 'signs/isl/';
 const ALT = 'signs/isl-alt/'; // second dictionary's version of some words (regional variants), if converted
+const MIN_REF = 5; // keyframes an extra signer's clip needs to count
+const CAM = 'signs/isl-cam/'; // more signers of the sign-board words (INCLUDE, CISLR): WORD.1, WORD.2 ... (tools/cislr/camrefs.py)
 
 // --- avatar constants (as in extract.py / avatar.js) ---
 const SHOULDER_C = [0, 1.435, 0];
@@ -109,11 +111,11 @@ function retarget(pose, poseImg, hands) {
 }
 
 export class ISLRecognizer {
-  constructor(video, overlay, { onFrame, onGloss, onLetter, onIdle } = {}) {
+  constructor(video, overlay, { onFrame, onGloss, onLetter, onIdle, allowed } = {}) {
     this.video = video;
     this.canvas = overlay;
     this.ctx = overlay.getContext('2d');
-    this.cb = { onFrame, onGloss, onLetter, onIdle };
+    this.cb = { onFrame, onGloss, onLetter, onIdle, allowed }; // allowed(): the words that fit at this point of the sentence, or null
     this.mode = 'words';
     this.seq = null; // frames of the sign being made
     this.down = 0;
@@ -168,6 +170,10 @@ export class ISLRecognizer {
     }
     toks = toks.filter((t) => index.has(t));
     const alt = new Set(await fetch(ALT + 'index.json').then((r) => (r.ok ? r.json() : [])).catch(() => []));
+    const refs = {}; // word -> its extra signers' files
+    if (this.mode === 'words') {
+      for (const f of await fetch(CAM + 'index.json').then((r) => (r.ok ? r.json() : [])).catch(() => [])) (refs[f.split('.')[0]] ||= []).push(f);
+    }
     const get = (url) => fetch(url).then((r) => r.json()).then((d) => toBody(d.frames, d.shoulderW)).catch(() => null);
     const tpl = {};
     for (let i = 0; i < toks.length; i += 24) {
@@ -177,6 +183,11 @@ export class ISLRecognizer {
         if (alt.has(t)) {
           const fa = await get(ALT + encodeURIComponent(t) + '.json');
           if (fa) tpl[t + '#2'] = fa;
+        }
+        for (const f of refs[t] || []) {
+          // (a clip converted into only a few keyframes is a near-still pose that matches any sign made near it)
+          const fc = await get(CAM + encodeURIComponent(f) + '.json');
+          if (fc && fc.length >= MIN_REF) tpl[`${t}#c${f.split('.')[1]}`] = fc;
         }
       }));
     }
@@ -206,7 +217,8 @@ export class ISLRecognizer {
     try {
       await this.video.play();
     } catch (e) {
-      if (gen !== this._gen) return false;
+      // AbortError: another start or stop replaced the stream while it was starting
+      if (gen !== this._gen || e?.name === 'AbortError') return false;
       throw e;
     }
     if (gen !== this._gen) return false;
@@ -312,9 +324,11 @@ export class ISLRecognizer {
     const r = cnt('R'), l = cnt('L');
     const ways = l > 1.5 * r ? [mirrorFrames(seq)] : l > r / 1.5 ? [seq, mirrorFrames(seq)] : [seq];
     let frames = null, ranked = [];
+    const ok = this.mode === 'words' && this.cb.allowed?.();
+    const tpl = ok ? Object.fromEntries(Object.entries(this.templates).filter(([k]) => ok.includes(k.split('#')[0]))) : this.templates;
     for (const w of ways) {
       const fw = trim(w);
-      const rw = fw ? rank(fw, this.templates, this.prepared) : [];
+      const rw = fw ? rank(fw, tpl, this.prepared) : [];
       if (rw.length && (!ranked.length || rw[0].score < ranked[0].score)) [frames, ranked] = [fw, rw];
     }
     if (!ranked.length) return;

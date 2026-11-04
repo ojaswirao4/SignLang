@@ -632,8 +632,9 @@ const REC_HELP = ISL_ONLY
     };
 
 // "Did you mean…?": the camera's runner-up words; tapping one replaces what it just added
-function showAlts(alts, replace) {
+function showAlts(alts, replace, label = 'Did you mean') {
   const box = $('#recAlts');
+  box.querySelector('span').textContent = label;
   box.querySelectorAll('button').forEach((b) => b.remove());
   box.hidden = !alts?.length;
   (alts || []).forEach((a) => {
@@ -762,7 +763,9 @@ async function startCamera() {
           $('#handZone').textContent = zone && zone !== 'neutral' ? zone : '';
           $('#holdBar').style.width = (progress || 0) * 100 + '%';
         },
-        onGloss: (g, alts) => {
+        onGloss: (g, alts, sure) => {
+          // a clear match goes in; otherwise nothing is guessed: the closest words are offered to pick from
+          if (!sure) return showAlts([g, ...alts], (a) => state.buffer.push({ tok: a, kind: 'sign' }), 'Not sure. Was it');
           pushGloss(g);
           showAlts(alts, (a) => (state.buffer[state.buffer.length - 1].tok = a));
         },
@@ -772,6 +775,11 @@ async function startCamera() {
             const last = state.buffer[state.buffer.length - 1];
             last.tok = last.tok.slice(0, -1) + a;
           });
+        },
+        // the venue's ISL word order (venues.js camera): the sentence's first sign, then the rest
+        allowed: () => {
+          const c = V().camera;
+          return c ? (state.buffer.some((b) => b.kind === 'sign') ? c.later : c.first) : null;
         },
         onIdle: () => {
           closeWord();

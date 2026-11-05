@@ -39,6 +39,8 @@ SETS = {
     'cislr-test': (Path.home() / 'datasets' / 'cislr_test', HERE.parent / 'cislr' / 'test_signs'),
     # the other CISLR video of each camera word (often a regional variant), from tools/cislr/variants.py
     'cislr-alt': (Path.home() / 'datasets' / 'cislr_alt', HERE.parent.parent / 'public' / 'signs' / 'isl-alt'),
+    # more signers of each sign-board word (INCLUDE + CISLR), as camera references: tools/cislr/camrefs.py
+    'isl-cam': (Path.home() / 'datasets' / 'isl_cam', HERE.parent.parent / 'public' / 'signs' / 'isl-cam'),
 }
 MODEL = HERE / 'models' / 'holistic_landmarker.task'
 

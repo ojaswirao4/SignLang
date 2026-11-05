@@ -59,16 +59,33 @@ if ('speechSynthesis' in window) {
   speechSynthesis.onvoiceschanged = pickVoice;
 }
 
-export function speak(text, { onStart, onEnd, rate = 1 } = {}) {
+// onProgress(0..1): how far through the text the voice is, so the captions can keep up with it. It
+// comes from the voice's word boundaries; voices that send none (Chrome's online Google voices) are
+// estimated from the time spoken (~14 characters a second at rate 1).
+let progressTimer;
+export function speak(text, { onStart, onEnd, onProgress, rate = 1 } = {}) {
   if (!('speechSynthesis' in window)) return onEnd?.();
   speechSynthesis.cancel();
+  clearInterval(progressTimer);
   const u = new SpeechSynthesisUtterance(text.replace(/₹\s?(\d+(?:,\d+)*)/g, '$1 rupees'));
   if (voice) u.voice = voice;
   u.rate = rate;
   u.pitch = 1.05;
-  u.onstart = () => onStart?.();
-  u.onend = () => onEnd?.();
-  u.onerror = () => onEnd?.();
+  const len = u.text.length || 1;
+  let boundaries = false, t0 = 0;
+  const stop = () => clearInterval(progressTimer);
+  u.onstart = () => {
+    onStart?.();
+    t0 = performance.now();
+    if (onProgress) progressTimer = setInterval(() => !boundaries && onProgress(Math.min(1, ((performance.now() - t0) / 1000) * 14 * rate / len)), 250);
+  };
+  u.onboundary = (e) => {
+    if (!onProgress || e.charIndex == null) return;
+    boundaries = true;
+    onProgress(Math.min(1, e.charIndex / len));
+  };
+  u.onend = () => (stop(), onProgress?.(1), onEnd?.());
+  u.onerror = () => (stop(), onEnd?.());
   speechSynthesis.speak(u);
 }
-export const stopSpeaking = () => 'speechSynthesis' in window && speechSynthesis.cancel();
+export const stopSpeaking = () => (clearInterval(progressTimer), 'speechSynthesis' in window && speechSynthesis.cancel());

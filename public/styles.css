@@ -264,7 +264,13 @@ svg { width: 18px; height: 18px; fill: currentColor; flex: none; }
 .sign-tabs button:not(.icon-btn), .rec-tabs button { border: 1px solid var(--line2); background: var(--paper); border-radius: 10px; padding: 6px 12px; font-size: 12.5px; font-weight: 600; color: var(--muted); }
 .sign-tabs button.active, .rec-tabs button.active { color: var(--teal); border-color: var(--teal2); background: var(--tealSoft); }
 .cam-wrap { position: relative; border-radius: 14px; overflow: hidden; background: #111; aspect-ratio: 4 / 3; max-height: 30vh; margin: 0 auto; width: 100%; }
-.cam-wrap video, .cam-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+/* contain, not cover: the whole camera picture shows (what the tracker sees), so "am I in the picture"
+   can be judged; cropping hid the edges where raised hands go */
+.cam-wrap video, .cam-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; transform: scaleX(-1); }
+/* signing on a laptop / desktop: Meera on the left half of the stage, the camera on the right half
+   (placed by dockCamera() in main.js); the panel keeps the signs, buttons and a roomy chat */
+.stage.signing .avatar-canvas { width: 45% !important; }
+.cam-wrap.docked { position: fixed; z-index: 5; max-height: none; aspect-ratio: auto; margin: 0; border: 1px solid rgba(217, 179, 106, 0.35); box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35); }
 .cam-loading { position: absolute; inset: 0; display: grid; place-items: center; font-size: 13px; color: #cfc6b8; text-align: center; padding: 20px; }
 .cam-hud { position: absolute; left: 10px; top: 10px; display: flex; gap: 6px; }
 .hud-shape, .hud-zone { padding: 4px 10px; border-radius: 8px; background: rgba(0, 0, 0, 0.55); font-size: 12px; font-weight: 700; color: #fff; }
@@ -417,3 +423,70 @@ body[data-venue='flight'] .services { border-bottom: 0; }
   .panel-head { padding-bottom: 6px; }
   .sign-card:not([hidden]) ~ .chat { min-height: 44px; }
 }
+
+/* Signing panel: the word strip under Meera stays out of sight (tests still read it); the panel uses
+   smaller text and has the room while signing (the chat is hidden), and folds to its tab bar after
+   Translate so the conversation shows; the arrow opens it again */
+.gloss-strip { display: none !important; }
+.sign-tabs button:not(.icon-btn), .rec-tabs button { font-size: 11.5px; padding: 5px 10px; }
+.rec-help { font-size: 11px; }
+.buffer-chips { min-height: 30px; padding: 5px; gap: 5px; }
+.buffer-chips .placeholder { font-size: 11.5px; }
+.bchip { font-size: 11px; padding: 4px 8px; }
+.rec-alts { font-size: 11.5px; }
+.rec-alts button { padding: 3px 9px; }
+.buf-meaning { font-size: 12.5px; padding: 6px 10px; }
+.buffer-actions .ghost { font-size: 12px; padding: 6px 10px; }
+.buffer-actions .auto { font-size: 11px; }
+.buffer-actions .primary { font-size: 12px; padding: 8px 14px; }
+.board button { font-size: 11px; padding: 7px 5px; }
+.sign-card:not([hidden]):not(.folded) { flex: 1 1 auto; }
+.sign-card:not([hidden]):not(.folded) ~ .chat, .sign-card:not([hidden]):not(.folded) ~ .quick { display: none; }
+.sign-card.folded { flex: none; padding-top: 8px; padding-bottom: 8px; }
+.sign-card.folded > :not(.sign-tabs) { display: none; }
+.sign-fold { margin-left: auto; border: 1px solid var(--line2); background: var(--paper); border-radius: 10px; padding: 4px 10px; font-size: 12px; font-weight: 600; color: var(--teal); }
+.sign-fold:hover { border-color: var(--teal2); background: var(--tealSoft); }
+.sign-fold ~ .icon-btn.small { margin-left: 0; }
+.sign-card:not(.folded) .board { max-height: none; flex: 1 1 auto; min-height: 120px; }
+/* the chat is out of the way while signing, so the panel can breathe: full help text in a readable
+   colour and more space between the parts (also on short screens, overriding the block above) */
+.sign-card:not(.folded) { gap: 12px; padding: 14px 20px; }
+.rec-help { display: block; -webkit-line-clamp: unset; overflow: visible; font-size: 12px; line-height: 1.5; color: var(--ink2); }
+/* A slimmer top bar on laptops and desktops, so Meera, the camera and the panel get more height */
+@media (min-width: 900px) {
+  .topbar { padding: 6px 20px; }
+  .logo { width: 34px; height: 34px; border-radius: 10px; }
+  .logo svg { width: 27px; height: 27px; }
+  .brand { gap: 10px; }
+  .brand-name { font-size: 20px; gap: 8px; }
+  .brand-name .deva { font-size: 16px; }
+  .brand-sub { margin-top: 2px; font-size: 10px; }
+  .mode-switch { padding: 3px; }
+  .mode-switch button { padding: 6px 14px; font-size: 12.5px; gap: 6px; }
+  .mode-switch button svg { width: 14px; height: 14px; }
+  #clockTime { font-size: 16px; }
+  #clockDate { font-size: 10px; }
+  .chip { font-size: 11px; padding: 5px 10px; }
+  .call-btn { padding: 7px 13px; font-size: 12.5px; border-radius: 10px; }
+  .top-actions .icon-btn { width: 34px; height: 34px; border-radius: 10px; }
+  .layout { padding-top: 12px; }
+}
+/* the welcome card never hides its top (and the gradient rule) above a short window: it scrolls instead,
+   and on short screens it is a little more compact (the welfare card is the tallest) */
+.welcome { overflow-y: auto; place-items: safe center; }
+@media (max-height: 700px) {
+  .welcome-card { padding: 26px 30px 20px; }
+  .venue-pick { margin-bottom: 12px; }
+  .namaste { font-size: 44px; }
+  .welcome h1 { font-size: 27px; }
+  .ways { margin-bottom: 18px; }
+}
+
+/* service tiles: a slim one-row strip after the first question (the handle switches back) */
+.svc-fold { display: block; margin: -8px auto 6px; border: 1px solid var(--line2); background: var(--paper); border-radius: 999px; padding: 2px 12px; font-size: 11.5px; font-weight: 600; color: var(--teal); position: relative; z-index: 1; }
+.svc-fold:hover { border-color: var(--teal2); background: var(--tealSoft); }
+.services[hidden] + .svc-fold { display: none; }
+.services.compact { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: max-content; grid-template-rows: auto; overflow-x: auto; scrollbar-width: thin; gap: 6px; padding: 4px 20px 12px; }
+.services.compact .tile { flex-direction: row; min-height: 0; gap: 6px; padding: 5px 10px 5px 6px; border-radius: 999px; font-size: 11.5px; white-space: nowrap; }
+.services.compact .tile .ic { width: 22px; height: 22px; border-radius: 7px; }
+.services.compact .tile .ic svg { width: 13px; height: 13px; }

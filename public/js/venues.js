@@ -3,7 +3,6 @@
 import { createBot } from './bot.js';
 import { createFlightBot, FLIGHT_TEMPLATES } from './flight.js';
 import { createSchemesBot, SCHEMES_TEMPLATES } from './schemes.js';
-import { SCHEMES_CHECKED } from './schemes-data.js';
 
 const ICONS = {
   key: 'M12.6 10a4.5 4.5 0 1 0 0 4h2.9v2.5h2.5V14H21v-4zM8.5 14.2a2.2 2.2 0 1 1 0-4.4 2.2 2.2 0 0 1 0 4.4z',
@@ -162,9 +161,9 @@ export const VENUES = {
     welcome: {
       title: 'Welcome to Sanket Seva',
       lead: 'I am <b>Meera</b>. I explain government schemes for Deaf and hard-of-hearing people, and show you the official documents.',
-      foot: `An independent guide, not an official government service · information checked ${SCHEMES_CHECKED}`,
+      foot: 'An independent guide, not an official government service',
     },
-    status: ['Captions always on', 'Signs in American Sign Language', 'Official links with every scheme', `Information checked ${SCHEMES_CHECKED}`],
+    status: ['Captions always on', 'Signs in American Sign Language', 'Official links with every scheme'],
     greeting: { text: 'Namaste! I am Meera. I can explain government schemes for Deaf and hard-of-hearing people, show you the official documents, and help you find what you can get. What would you like to know?', gloss: ['NAMASTE', 'ME', 'FS:MEERA', 'GOVERNMENT', 'HELP', 'DEAF', 'YOU', 'WANT', 'WHAT'] },
     concierge: {
       hint: 'Ask about any scheme · Type, speak, or sign',
@@ -196,7 +195,14 @@ export const VENUES = {
       Greetings: GREETINGS,
       Questions: QUESTIONS,
       Schemes: ['GOVERNMENT', 'MONEY', 'MONTH', 'CARD', 'DEAF', 'HEARING-AID', 'SCHOOL', 'COLLEGE', 'STUDY', 'WORK', 'BUSINESS', 'TRAIN', 'DRIVE', 'FREE'],
-      Papers: ['PAPER', 'FORM', 'DOCUMENT', 'LAW', 'CHILD', 'FAMILY', 'SIGN-LANGUAGE', 'INTERPRETER', 'DOCTOR', 'HOSPITAL', 'PHONE', 'INTERNET', 'FIND', 'LEARN'],
+      Papers: ['PAPER', 'FORM', 'DOCUMENT', 'LAW', 'CHILD', 'FAMILY', 'SIGN-LANGUAGE', 'INTERPRETER', 'DOCTOR', 'HOSPITAL', 'PHONE', 'INTERNET', 'FIND', 'LEARN', 'GET'],
+    },
+    // The camera follows ISL word order: a sentence opens with its topic (or is a greeting on its own),
+    // question words come last. So the first sign is matched only against these, the later ones
+    // against the rest; fewer look-alikes to choose from (HEARING-AID vs PHONE, WHAT).
+    camera: {
+      first: [...GREETINGS, 'ME', 'YOU', 'GOVERNMENT', 'MONEY', 'MONTH', 'CARD', 'DEAF', 'HEARING-AID', 'SCHOOL', 'COLLEGE', 'STUDY', 'WORK', 'BUSINESS', 'TRAIN', 'DRIVE', 'CHILD', 'FAMILY', 'SIGN-LANGUAGE', 'INTERPRETER'],
+      later: [...QUESTIONS, 'PLEASE', 'THANK-YOU', 'GOVERNMENT', 'MONEY', 'MONTH', 'CARD', 'DEAF', 'HEARING-AID', 'SCHOOL', 'COLLEGE', 'STUDY', 'WORK', 'BUSINESS', 'TRAIN', 'DRIVE', 'FREE', 'PAPER', 'FORM', 'DOCUMENT', 'LAW', 'CHILD', 'FAMILY', 'SIGN-LANGUAGE', 'INTERPRETER', 'DOCTOR', 'HOSPITAL', 'PHONE', 'INTERNET', 'FIND', 'LEARN', 'GET'],
     },
     createBot: createSchemesBot,
     templates: SCHEMES_TEMPLATES,

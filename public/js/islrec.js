@@ -2,8 +2,8 @@
 // MediaPipe Pose + Hands track the signer; each frame is turned into the same keyframe format as
 // Meera's signs, with the same maths as the video converter (tools/wlasl/extract.py: torso frame,
 // shoulder-width scaling, finger bends). A sign is the stretch between the hands rising and dropping
-// again; it is matched (islmatch.js) against ISL references: the camera vocabulary (the words Meera
-// uses most, plus the venue's sign board), the ISL alphabet, or the number signs.
+// again; it is matched (islmatch.js) against ISL references: the venue's sign-board words (without
+// a board, the words Meera uses most), the ISL alphabet, or the number signs.
 // Same interface as SignRecognizer (recognizer.js): start/stop/setMode and the on* callbacks, except
 // that onGloss also gets the runner-up words, for a "Did you mean…?" choice.
 import { rank, topWords, isConfident, mirrorFrames, toBody, BODY_W } from './islmatch.js';
@@ -14,6 +14,8 @@ const HAND_MODEL = 'https://storage.googleapis.com/mediapipe-models/hand_landmar
 const POSE_MODEL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
 const SIGNS = 'signs/isl/';
 const ALT = 'signs/isl-alt/'; // second dictionary's version of some words (regional variants), if converted
+const MIN_REF = 5; // keyframes an extra signer's clip needs to count
+const CAM = 'signs/isl-cam/'; // more signers of the sign-board words (INCLUDE, CISLR): WORD.1, WORD.2 ... (tools/cislr/camrefs.py)
 
 // --- avatar constants (as in extract.py / avatar.js) ---
 const SHOULDER_C = [0, 1.435, 0];
@@ -63,6 +65,8 @@ function handPose(hw, side) {
 
 // One camera frame -> {R, L} in avatar space (extract.py retarget), or null without a body.
 const noseHeights = []; // the person's nose above their shoulders (at her shoulder width), recent frames
+const NOSE_REL = [0, NOSE_UP, 0.1]; // her nose from her shoulder centre (extract.py NOSE - SHOULDER_C)
+let noseAvg = null; // the person's nose (as the hands: from the shoulder centre, lifted), smoothed
 function retarget(pose, poseImg, hands) {
   if (!pose) return null;
   const pw = pose.map(toAvatar);
@@ -79,6 +83,14 @@ function retarget(pose, poseImg, hands) {
   const med = [...noseHeights].sort((a, b) => a - b)[noseHeights.length >> 1];
   const up = Math.min(1.6, Math.max(0.8, NOSE_UP / (med || NOSE_UP)));
   const lift = (v) => [v[0], v[1] > 0 ? v[1] * up : v[1], v[2]];
+  // Near the face a hand is placed relative to the face, not the shoulders, as the converter does: a
+  // head held forward or to one side (at a laptop) would otherwise move "at the ear" to the chin
+  const nose = lift(mul(B(sub(pw[0], scMid)), k));
+  noseAvg = noseAvg ? noseAvg.map((x, i) => x + (nose[i] - x) * 0.3) : nose;
+  const toFace = (palm) => {
+    const wgt = Math.min(1, Math.max(0, 1 - (norm(sub(palm, noseAvg)) - 0.1) / 0.15));
+    return addv(palm, mul(sub(NOSE_REL, noseAvg), wgt));
+  };
   // which detected hand is which: the one whose wrist is nearest the body's right / left wrist
   const sides = {};
   const d2 = (a, b) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
@@ -96,24 +108,24 @@ function retarget(pose, poseImg, hands) {
       // resting hand of WHERE). Estimate a raised one from the arm: wrist position, forearm
       // direction, no palm or finger shape.
       const f = unit(B(sub(pw[wi], pw[ei])));
-      const p = addv(addv(SHOULDER_C, wrist), mul(f, PALM_OFFSET));
+      const p = addv(SHOULDER_C, toFace(addv(wrist, mul(f, PALM_OFFSET))));
       const seen = (pose[wi].visibility ?? 1) > 0.6 && (pose[ei].visibility ?? 1) > 0.6;
       fr[s] = seen && p[1] > UP_Y ? { w: wrist, f, n: null, h: null, p, est: true } : { w: wrist, f: null };
       continue;
     }
     const hp = handPose(hd.world.map(toAvatar), s);
     const f = B(hp.f), n = B(hp.n);
-    fr[s] = { w: wrist, f, n, h: hp.h, p: addv(addv(SHOULDER_C, wrist), mul(unit(f), PALM_OFFSET)) };
+    fr[s] = { w: wrist, f, n, h: hp.h, p: addv(SHOULDER_C, toFace(addv(wrist, mul(unit(f), PALM_OFFSET)))) };
   }
   return fr;
 }
 
 export class ISLRecognizer {
-  constructor(video, overlay, { onFrame, onGloss, onLetter, onIdle } = {}) {
+  constructor(video, overlay, { onFrame, onGloss, onLetter, onIdle, allowed } = {}) {
     this.video = video;
     this.canvas = overlay;
     this.ctx = overlay.getContext('2d');
-    this.cb = { onFrame, onGloss, onLetter, onIdle };
+    this.cb = { onFrame, onGloss, onLetter, onIdle, allowed }; // allowed(): the words that fit at this point of the sentence, or null
     this.mode = 'words';
     this.seq = null; // frames of the sign being made
     this.down = 0;
@@ -162,10 +174,16 @@ export class ISLRecognizer {
     if (this.mode === 'numbers') toks = DIGITS;
     else {
       const vocab = await fetch(SIGNS + 'camera_vocab.json').then((r) => r.json()).catch(() => []);
-      toks = [...new Set([...this.extraWords, ...vocab])];
+      // With a venue's sign board, only its words: among all ~400 words, too many look alike from one
+      // camera (a hand raised beside the head is HEARING-AID, PERSONAL, UNDERSTAND, UP...)
+      toks = this.extraWords.length ? [...new Set(this.extraWords)] : vocab;
     }
     toks = toks.filter((t) => index.has(t));
     const alt = new Set(await fetch(ALT + 'index.json').then((r) => (r.ok ? r.json() : [])).catch(() => []));
+    const refs = {}; // word -> its extra signers' files
+    if (this.mode === 'words') {
+      for (const f of await fetch(CAM + 'index.json').then((r) => (r.ok ? r.json() : [])).catch(() => [])) (refs[f.split('.')[0]] ||= []).push(f);
+    }
     const get = (url) => fetch(url).then((r) => r.json()).then((d) => toBody(d.frames, d.shoulderW)).catch(() => null);
     const tpl = {};
     for (let i = 0; i < toks.length; i += 24) {
@@ -175,6 +193,11 @@ export class ISLRecognizer {
         if (alt.has(t)) {
           const fa = await get(ALT + encodeURIComponent(t) + '.json');
           if (fa) tpl[t + '#2'] = fa;
+        }
+        for (const f of refs[t] || []) {
+          // (a clip converted into only a few keyframes is a near-still pose that matches any sign made near it)
+          const fc = await get(CAM + encodeURIComponent(f) + '.json');
+          if (fc && fc.length >= MIN_REF) tpl[`${t}#c${f.split('.')[1]}`] = fc;
         }
       }));
     }
@@ -204,7 +227,8 @@ export class ISLRecognizer {
     try {
       await this.video.play();
     } catch (e) {
-      if (gen !== this._gen) return false;
+      // AbortError: another start or stop replaced the stream while it was starting
+      if (gen !== this._gen || e?.name === 'AbortError') return false;
       throw e;
     }
     if (gen !== this._gen) return false;
@@ -310,9 +334,11 @@ export class ISLRecognizer {
     const r = cnt('R'), l = cnt('L');
     const ways = l > 1.5 * r ? [mirrorFrames(seq)] : l > r / 1.5 ? [seq, mirrorFrames(seq)] : [seq];
     let frames = null, ranked = [];
+    const ok = this.mode === 'words' && this.cb.allowed?.();
+    const tpl = ok ? Object.fromEntries(Object.entries(this.templates).filter(([k]) => ok.includes(k.split('#')[0]))) : this.templates;
     for (const w of ways) {
       const fw = trim(w);
-      const rw = fw ? rank(fw, this.templates, this.prepared) : [];
+      const rw = fw ? rank(fw, tpl, this.prepared) : [];
       if (rw.length && (!ranked.length || rw[0].score < ranked[0].score)) [frames, ranked] = [fw, rw];
     }
     if (!ranked.length) return;

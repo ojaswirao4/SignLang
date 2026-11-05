@@ -17,23 +17,36 @@ export function toBody(frames, shoulderW = LEGACY_W) {
   const sc = (h) => h && { ...h, p: h.p.map((x, i) => SC[i] + (x - SC[i]) * k) };
   return frames.map((f) => ({ ...f, R: sc(f.R), L: sc(f.L) }));
 }
-// Weights (tuned with tools/cislr/eval_camera.mjs; it can override them to try others):
+// Weights (tuned with tools/cislr/eval_refs.mjs; it can override them to try others):
 //  p     palm position (metres); depth (z) from one camera is unreliable, so it counts for less
 //  path  the movement itself: palm position relative to where the sign's own path is centred
 //  dir   finger direction and palm normal (1 - cos)
-//  shape finger bends + spread (mean absolute difference)
+//  shape how far each finger is folded + spread (shapeDist)
 //  miss  one side has a second hand and the other doesn't (hidden: ... and it touches the first)
-// (chosen on the eval's simulated signer variation: 96% top-1 / 98% top-3 among 400 signs at its
-// roughest level; depth is ignored, and the movement counts for more than where exactly it is made)
-export const CFG = { p: 1.5, z: 0, path: 6, dir: 1, shape: 1.4, miss: 1.2, hidden: 0.3, left: 0.6 };
+//  sure  how much further the runner-up word must be for a clear match (isConfident)
+// (checked on real signers the camera has not seen, tools/cislr/eval_refs.mjs: 72% top-1 / 83% top-3
+// over all venues' board words, 499 signer videos; with sure 1.05 it is sure on 85% of signs and right
+// on 79% of those (1.1: 74% / 85%, too often unsure); depth is ignored, and the movement counts for
+// more than where exactly it is made. Forgiving part of where the sign is made, or scoring a word by
+// its few closest signers, did not help)
+export const CFG = { p: 1.5, z: 0, path: 6, dir: 1, shape: 2.8, miss: 1.2, hidden: 0.3, left: 0.6, sure: 1.05 };
 
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const dxyz = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], (a[2] - b[2]) * CFG.z);
 const lerp3 = (a, b, u) => [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u, a[2] + (b[2] - a[2]) * u];
 const lerpN = (a, b, u) => a.map((x, i) => x + (b[i] - x) * u);
 
+// Hand shape: each finger's knuckle and middle joint (how far it is folded; the fingertip joint is the
+// noisiest point MediaPipe tracks, and reads half bent even on a straight finger), plus a little spread
+const fingerFold = (h) => [0, 3, 6, 9].map((i) => (h[i] + h[i + 1]) / 2);
+function shapeDist(a, b) {
+  if (!a.h || !b.h) return 0.3;
+  const fa = fingerFold(a.h), fb = fingerFold(b.h);
+  return fa.reduce((s, x, i) => s + Math.abs(x - fb[i]), 0) / 4 + 0.1 * Math.abs(a.h[12] - b.h[12]);
+}
+
 function handDist(a, b) {
-  const shape = a.h && b.h ? a.h.slice(0, 13).reduce((s, x, i) => s + Math.abs(x - b.h[i]), 0) / 13 : 0.3;
+  const shape = shapeDist(a, b);
   const path = CFG.path && a.q && b.q ? CFG.path * dxyz(a.q, b.q) : 0;
   // a hand estimated from the arm (islrec.js) has a direction but no palm normal or finger shape
   const dir = a.n && b.n ? 2 - dot(a.f, b.f) - dot(a.n, b.n) : 2 * (1 - dot(a.f, b.f));
@@ -123,7 +136,7 @@ export function rank(liveFrames, templates, prepared = new Map()) {
   for (const [tok, frames] of Object.entries(templates)) {
     let t = prepared.get(tok);
     if (!t) prepared.set(tok, (t = resample(frames)));
-    // a word can have several reference signs (regional variants): CAR, CAR#2
+    // a word can have several reference signs (regional variants, other signers): CAR, CAR#2, CAR#c3
     if (t.length) res.push({ tok, word: tok.split('#')[0], score: dtw(live, t) });
   }
   res.sort((x, y) => x.score - y.score);
@@ -133,8 +146,8 @@ export function rank(liveFrames, templates, prepared = new Map()) {
 // The best n different words (variants of the same word collapse into one).
 export const topWords = (ranked, n = 3) => [...new Set(ranked.map((x) => x.word))].slice(0, n);
 
-// a clear winner: the runner-up (a different word) is at least 15% further away
+// a clear winner: the runner-up (a different word) is at least CFG.sure times further away
 export const isConfident = (ranked) => {
   const second = ranked.find((x) => x.word !== ranked[0]?.word);
-  return ranked.length > 1 && (!second || second.score > ranked[0].score * 1.15);
+  return ranked.length > 1 && (!second || second.score > ranked[0].score * CFG.sure);
 };

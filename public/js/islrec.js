@@ -65,6 +65,8 @@ function handPose(hw, side) {
 
 // One camera frame -> {R, L} in avatar space (extract.py retarget), or null without a body.
 const noseHeights = []; // the person's nose above their shoulders (at her shoulder width), recent frames
+const NOSE_REL = [0, NOSE_UP, 0.1]; // her nose from her shoulder centre (extract.py NOSE - SHOULDER_C)
+let noseAvg = null; // the person's nose (as the hands: from the shoulder centre, lifted), smoothed
 function retarget(pose, poseImg, hands) {
   if (!pose) return null;
   const pw = pose.map(toAvatar);
@@ -81,6 +83,14 @@ function retarget(pose, poseImg, hands) {
   const med = [...noseHeights].sort((a, b) => a - b)[noseHeights.length >> 1];
   const up = Math.min(1.6, Math.max(0.8, NOSE_UP / (med || NOSE_UP)));
   const lift = (v) => [v[0], v[1] > 0 ? v[1] * up : v[1], v[2]];
+  // Near the face a hand is placed relative to the face, not the shoulders, as the converter does: a
+  // head held forward or to one side (at a laptop) would otherwise move "at the ear" to the chin
+  const nose = lift(mul(B(sub(pw[0], scMid)), k));
+  noseAvg = noseAvg ? noseAvg.map((x, i) => x + (nose[i] - x) * 0.3) : nose;
+  const toFace = (palm) => {
+    const wgt = Math.min(1, Math.max(0, 1 - (norm(sub(palm, noseAvg)) - 0.1) / 0.15));
+    return addv(palm, mul(sub(NOSE_REL, noseAvg), wgt));
+  };
   // which detected hand is which: the one whose wrist is nearest the body's right / left wrist
   const sides = {};
   const d2 = (a, b) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
@@ -98,14 +108,14 @@ function retarget(pose, poseImg, hands) {
       // resting hand of WHERE). Estimate a raised one from the arm: wrist position, forearm
       // direction, no palm or finger shape.
       const f = unit(B(sub(pw[wi], pw[ei])));
-      const p = addv(addv(SHOULDER_C, wrist), mul(f, PALM_OFFSET));
+      const p = addv(SHOULDER_C, toFace(addv(wrist, mul(f, PALM_OFFSET))));
       const seen = (pose[wi].visibility ?? 1) > 0.6 && (pose[ei].visibility ?? 1) > 0.6;
       fr[s] = seen && p[1] > UP_Y ? { w: wrist, f, n: null, h: null, p, est: true } : { w: wrist, f: null };
       continue;
     }
     const hp = handPose(hd.world.map(toAvatar), s);
     const f = B(hp.f), n = B(hp.n);
-    fr[s] = { w: wrist, f, n, h: hp.h, p: addv(addv(SHOULDER_C, wrist), mul(unit(f), PALM_OFFSET)) };
+    fr[s] = { w: wrist, f, n, h: hp.h, p: addv(SHOULDER_C, toFace(addv(wrist, mul(unit(f), PALM_OFFSET)))) };
   }
   return fr;
 }

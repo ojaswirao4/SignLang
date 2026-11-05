@@ -23,10 +23,13 @@ export function toBody(frames, shoulderW = LEGACY_W) {
 //  dir   finger direction and palm normal (1 - cos)
 //  shape how far each finger is folded + spread (shapeDist)
 //  miss  one side has a second hand and the other doesn't (hidden: ... and it touches the first)
-// (checked on real signers the camera has not seen, tools/cislr/eval_refs.mjs: 65% top-1 / 77% top-3
-// over all venues' board words, and 87% right when isConfident; depth is ignored, and the movement
-// counts for more than where exactly it is made)
-export const CFG = { p: 1.5, z: 0, path: 6, dir: 1, shape: 2.8, miss: 1.2, hidden: 0.3, left: 0.6 };
+//  sure  how much further the runner-up word must be for a clear match (isConfident)
+// (checked on real signers the camera has not seen, tools/cislr/eval_refs.mjs: 72% top-1 / 83% top-3
+// over all venues' board words, 499 signer videos; with sure 1.05 it is sure on 85% of signs and right
+// on 79% of those (1.1: 74% / 85%, too often unsure); depth is ignored, and the movement counts for
+// more than where exactly it is made. Forgiving part of where the sign is made, or scoring a word by
+// its few closest signers, did not help)
+export const CFG = { p: 1.5, z: 0, path: 6, dir: 1, shape: 2.8, miss: 1.2, hidden: 0.3, left: 0.6, sure: 1.05 };
 
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const dxyz = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], (a[2] - b[2]) * CFG.z);
@@ -133,7 +136,7 @@ export function rank(liveFrames, templates, prepared = new Map()) {
   for (const [tok, frames] of Object.entries(templates)) {
     let t = prepared.get(tok);
     if (!t) prepared.set(tok, (t = resample(frames)));
-    // a word can have several reference signs (regional variants): CAR, CAR#2
+    // a word can have several reference signs (regional variants, other signers): CAR, CAR#2, CAR#c3
     if (t.length) res.push({ tok, word: tok.split('#')[0], score: dtw(live, t) });
   }
   res.sort((x, y) => x.score - y.score);
@@ -143,8 +146,8 @@ export function rank(liveFrames, templates, prepared = new Map()) {
 // The best n different words (variants of the same word collapse into one).
 export const topWords = (ranked, n = 3) => [...new Set(ranked.map((x) => x.word))].slice(0, n);
 
-// a clear winner: the runner-up (a different word) is at least 15% further away
+// a clear winner: the runner-up (a different word) is at least CFG.sure times further away
 export const isConfident = (ranked) => {
   const second = ranked.find((x) => x.word !== ranked[0]?.word);
-  return ranked.length > 1 && (!second || second.score > ranked[0].score * 1.15);
+  return ranked.length > 1 && (!second || second.score > ranked[0].score * CFG.sure);
 };

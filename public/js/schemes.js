@@ -1,7 +1,7 @@
 // Offline welfare-schemes brain (third venue): answers about each scheme, the documents it needs and how
 // to apply, lists schemes by topic, and a short "find my schemes" flow. Same interface as createBot().
 import { R, createFaqMatcher } from './bot.js';
-import { SCHEMES, SCHEME_CATS, SCHEMES_CHECKED } from './schemes-data.js';
+import { SCHEMES, SCHEME_CATS } from './schemes-data.js';
 
 const BY_ID = Object.fromEntries(SCHEMES.map((s) => [s.id, s]));
 const faq = createFaqMatcher(SCHEMES.map((s) => ({ id: s.id, q: [...s.q, s.name], k: s.k })));
@@ -279,7 +279,7 @@ export function createSchemesBot() {
         return { ...schemeReply(s), text: `I think you are asking about ${s.name}. ` + schemeReply(s).text };
       }
       return {
-        text: `Sorry, I do not know that one yet. I can explain hearing aids, cochlear implants, pension, scholarships, coaching, jobs, training, loans, train concession, driving licence and tax benefits. You can also search every central and state scheme on the official myScheme portal. (Information last checked ${SCHEMES_CHECKED}.)`,
+        text: `Sorry, I do not know that one yet. I can explain hearing aids, cochlear implants, pension, scholarships, coaching, jobs, training, loans, train concession, driving licence and tax benefits. You can also search every central and state scheme on the official myScheme portal.`,
         gloss: ['SORRY', 'ME', 'NOT', 'KNOW', 'GOVERNMENT', 'HELP', 'INTERNET', 'FIND'],
         schemes: ['state'],
       };

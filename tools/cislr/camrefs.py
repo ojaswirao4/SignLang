@@ -8,13 +8,15 @@ with one entry per video (WORD.1, WORD.2 ...). Convert them with:
   ..\\wlasl\\.venv\\Scripts\\python ..\\wlasl\\extract.py --set isl-cam
 which writes public/signs/isl-cam/, loaded by islrec.js as extra references of each word.
 
-Usage: python camrefs.py [--per 12] [--download WORD,WORD]
+Usage: python camrefs.py [--per 12] [--download WORD,WORD|all]
+(an existing manifest keeps its numbering; videos not in it yet are added after)
   --per       INCLUDE videos per word, spread over the signers
   --download  only fetch INCLUDE videos for these words (the rest use the videos already on disk)
 """
 import json
 import re
 import sys
+import time
 import zipfile
 from pathlib import Path
 
@@ -64,16 +66,38 @@ def spread(items, n):
     return [items[round(i * (len(items) - 1) / (n - 1))] for i in range(n)]
 
 
+def fetch_video(zips, s, v, dst, tries=3):
+    """Download one INCLUDE clip out of its zip on Zenodo (which fails now and then): retry, else skip."""
+    for i in range(tries):
+        try:
+            if v['url'] not in zips:
+                zips[v['url']] = zipfile.ZipFile(RangeFile(v['url'], s))
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            tmp = dst.with_suffix('.part')
+            tmp.write_bytes(zips[v['url']].read(v['member']))
+            tmp.rename(dst)
+            return True
+        except Exception as e:  # noqa: BLE001 (network / server errors)
+            zips.pop(v['url'], None)
+            print(f'  {v["member"]}: {type(e).__name__} (try {i + 1}/{tries})', flush=True)
+            time.sleep(5 * (i + 1))
+    return False
+
+
 def main():
     per = int(sys.argv[sys.argv.index('--per') + 1]) if '--per' in sys.argv else 12
     fetch = set(sys.argv[sys.argv.index('--download') + 1].split(',')) if '--download' in sys.argv else None
     catalog = json.loads((INC / 'catalog.json').read_text())
     cislr = json.loads((CISLR / 'manifest.json').read_text(encoding='utf-8'))
     s, zips = requests.Session(), {}
-    manifest = {}
+    # keep the numbers already given (and converted): new videos are added after them
+    old = json.loads((OUT / 'manifest.json').read_text()) if (OUT / 'manifest.json').exists() else {}
+    manifest = dict(old)  # (so a run cut short still keeps every earlier entry)
     for tok in board_words():
         names = ALIASES.get(tok, [tok.lower().replace('-', ' ')])
-        skip, vids = used_ids(tok), []
+        keep = sorted((k for k in old if k.rsplit('.', 1)[0] == tok.lower()), key=lambda k: int(k.rsplit('.', 1)[1]))
+        vids = [old[k][0] for k in keep]
+        skip = used_ids(tok) | {v['video_id'] for v in vids}
         for name in names:
             for v in cislr.get(name, []):
                 if v['video_id'] not in skip:
@@ -86,14 +110,10 @@ def main():
                     continue
                 dst = INC / 'videos' / name / Path(v['member']).name
                 if not dst.exists():
-                    if fetch is not None and tok not in fetch:
+                    if fetch is not None and 'ALL' not in fetch and tok not in fetch:
                         continue
-                    if v['url'] not in zips:
-                        zips[v['url']] = zipfile.ZipFile(RangeFile(v['url'], s))
-                    dst.parent.mkdir(parents=True, exist_ok=True)
-                    tmp = dst.with_suffix('.part')
-                    tmp.write_bytes(zips[v['url']].read(v['member']))
-                    tmp.rename(dst)
+                    if not fetch_video(zips, s, v, dst):
+                        continue
                 vids.append({'file': str(dst), 'video_id': vid, 'source': 'INCLUDE', 'dataset': 'INCLUDE', 'url': f'{v["zip"]}:{v["member"]}'})
                 skip.add(vid)
         for i, v in enumerate(vids, 1):
